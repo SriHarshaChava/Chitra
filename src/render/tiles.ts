@@ -6,11 +6,12 @@
  *
  * Each tile has a `core` (the area it is responsible for drawing) and a `padded`
  * area that adds a few pixels from its neighbours. When the GPU smooths pixels at a
- * tile's edge it reads those borrowed pixels, so no seams appear between tiles.
+ * tile's edge, or sharpening and noise reduction look at nearby pixels (up to 4 away),
+ * it reads those borrowed pixels, so no seams appear between tiles.
  */
 
 export const TILE_SIZE = 2048;
-export const TILE_BORDER = 4;
+export const TILE_BORDER = 8;
 
 export interface Rect {
   x: number;

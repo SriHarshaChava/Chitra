@@ -165,3 +165,15 @@ export function baseCurve(encoded: number, strength = BASE_CONTRAST): number {
   const s = v * v * (3 - 2 * v); // smoothstep: the classic S shape
   return v + strength * (s - v);
 }
+
+/** Rec.2020 luminance weights (how bright each primary looks). */
+export const LUMA_REC2020 = [0.2627, 0.678, 0.0593] as const;
+
+/** Encoding that keeps going above 1, so highlights pushed past white can be recovered. */
+export function encodeExtended(linear: number): number {
+  return linear <= 1 ? encodeSrgb(linear) : 1.055 * Math.pow(linear, 1 / 2.4) - 0.055;
+}
+
+export function decodeExtended(encoded: number): number {
+  return encoded <= 1 ? decodeSrgb(encoded) : Math.pow((encoded + 0.055) / 1.055, 2.4);
+}

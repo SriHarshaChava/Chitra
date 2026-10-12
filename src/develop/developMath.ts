@@ -6,6 +6,7 @@
  * and a browser test checks that the shader produces the same numbers.
  *
  * Order of operations (like Lightroom):
+ *   0. sharpening + noise reduction  (linear photo data, reads neighbours: detail.ts)
  *   1. white balance + exposure      (linear light, one 3×3 matrix)
  *   2. vibrance + saturation         (linear light, brightness preserved)
  *   3. colour mixer                  (OKLCh, per colour band)
@@ -14,15 +15,22 @@
  *   5. colour grading                (OKLab, by brightness)
  *   6. convert to the display's colours and encode
  */
-import { decodeSrgb, encodeSrgb, transform, type Matrix3 } from '../color/colorSpaces';
+import {
+  decodeExtended,
+  encodeExtended,
+  encodeSrgb,
+  LUMA_REC2020,
+  transform,
+  type Matrix3,
+} from '../color/colorSpaces';
+import { detailParams, type DetailParams } from './detail';
 import { applyGrading, gradingParams, type GradingParams } from './grading';
 import { applyMixer, BANDS, HUE_RANGE, LUMINANCE_RANGE, type MixerParams } from './hsl';
 import type { Recipe } from './recipe';
 import { curveLut, isLinearCurve, lookupCurve } from './toneCurve';
 import { whiteBalanceMatrix } from './whiteBalance';
 
-/** Rec.2020 luminance weights (how bright each primary looks). */
-export const LUMA_REC2020 = [0.2627, 0.678, 0.0593] as const;
+export { decodeExtended, encodeExtended, LUMA_REC2020 };
 
 // How far each slider at ±100 moves things, chosen to feel similar to Lightroom.
 const BLACKS_RANGE = 0.08;
@@ -57,6 +65,11 @@ export interface DevelopParams {
   mixer: MixerParams | null;
   /** Colour grading, or `null` when all wheels are at zero. */
   grading: GradingParams | null;
+  /**
+   * Sharpening and noise reduction, or `null` when off. They read neighbouring pixels,
+   * so they run before everything else, on the photo data (see `detail.ts`).
+   */
+  detail: DetailParams | null;
 }
 
 function mixerParams(recipe: Recipe): MixerParams | null {
@@ -97,6 +110,7 @@ export function developParams(recipe: Recipe, baseContrast: number): DevelopPara
     curve: isLinearCurve(recipe.toneCurve) ? null : curveLut(recipe.toneCurve),
     mixer: mixerParams(recipe),
     grading: grading(recipe),
+    detail: detailParams(recipe),
   };
 }
 
@@ -130,15 +144,6 @@ export function toneChannel(v: number, p: DevelopParams): number {
   t = sCurve(t, p.baseContrast);
   if (p.curve) t = lookupCurve(p.curve, t);
   return t;
-}
-
-/** Encoding that keeps going above 1, so highlights pushed past white can be recovered. */
-export function encodeExtended(linear: number): number {
-  return linear <= 1 ? encodeSrgb(linear) : 1.055 * Math.pow(linear, 1 / 2.4) - 0.055;
-}
-
-export function decodeExtended(encoded: number): number {
-  return encoded <= 1 ? decodeSrgb(encoded) : Math.pow((encoded + 0.055) / 1.055, 2.4);
 }
 
 /**

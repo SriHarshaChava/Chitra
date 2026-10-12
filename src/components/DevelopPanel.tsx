@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import type { PhotoInfo } from '../decode/photoInfo';
 import {
   DEFAULT_RECIPE,
+  DETAIL_SECTIONS,
   isDefaultRecipe,
   SLIDER_SECTIONS,
   type AdjustmentKey,
@@ -158,6 +159,7 @@ function Adjustments({ develop, disabled }: { develop: DevelopControls; disabled
   const basicKeys = SLIDER_SECTIONS.flatMap((s) => s.sliders.map((spec) => spec.key));
   const mixerKeys = groupKeys('colorMixer');
   const gradingKeys = groupKeys('colorGrading');
+  const detailKeys = groupKeys('detail');
   const curveChanged = !isLinearCurve(recipe.toneCurve);
 
   return (
@@ -213,6 +215,26 @@ function Adjustments({ develop, disabled }: { develop: DevelopControls; disabled
         actions={resetButton('Colour grading', gradingKeys)}
       >
         <ColorGrading {...sliderProps} />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        id="detail"
+        title="Detail"
+        changed={changed(detailKeys)}
+        actions={resetButton('Detail', detailKeys)}
+      >
+        <p className="panel-note">
+          Zoom to 1:1 to judge sharpening and noise reduction. They aren't shown in the zoomed-out
+          view, but are always included in exports.
+        </p>
+        {DETAIL_SECTIONS.map((section) => (
+          <div key={section.title} className="slider-group">
+            <h4 className="slider-group-title">{section.title}</h4>
+            {section.sliders.map((spec) => (
+              <Slider key={spec.key} spec={spec} {...sliderProps} />
+            ))}
+          </div>
+        ))}
       </CollapsibleSection>
     </>
   );
