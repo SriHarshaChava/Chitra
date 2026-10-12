@@ -1,4 +1,9 @@
+export type Module = 'library' | 'develop';
+
 interface TopBarProps {
+  module: Module;
+  onModule: (module: Module) => void;
+  canDevelop: boolean;
   showLibrary: boolean;
   showDevelop: boolean;
   onToggleLibrary: () => void;
@@ -9,6 +14,9 @@ interface TopBarProps {
 }
 
 export function TopBar({
+  module,
+  onModule,
+  canDevelop,
   showLibrary,
   showDevelop,
   onToggleLibrary,
@@ -23,6 +31,7 @@ export function TopBar({
         <button
           type="button"
           className="icon-button"
+          disabled={module !== 'develop'}
           aria-label={showLibrary ? 'Hide library panel' : 'Show library panel'}
           aria-pressed={showLibrary}
           onClick={onToggleLibrary}
@@ -33,9 +42,25 @@ export function TopBar({
       </div>
 
       <nav className="module-tabs" aria-label="Modules">
-        <span className="module-tab module-tab-active" aria-current="page">
+        <button
+          type="button"
+          className={`module-tab${module === 'library' ? ' module-tab-active' : ''}`}
+          aria-current={module === 'library' ? 'page' : undefined}
+          onClick={() => onModule('library')}
+          title="Library (G)"
+        >
+          Library
+        </button>
+        <button
+          type="button"
+          className={`module-tab${module === 'develop' ? ' module-tab-active' : ''}`}
+          aria-current={module === 'develop' ? 'page' : undefined}
+          onClick={() => onModule('develop')}
+          disabled={!canDevelop}
+          title="Develop (D)"
+        >
           Develop
-        </span>
+        </button>
         <span className="module-tab module-tab-disabled" title="Video editing arrives in Phase 6">
           Video
         </span>

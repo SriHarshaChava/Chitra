@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { existsSync } from 'node:fs';
-import { litPixels, setSlider } from './helpers';
+import { litPixels, setSlider, importAndOpen } from './helpers';
 
 const NEF = 'samples/iss030e122639.NEF';
 
@@ -10,7 +10,7 @@ test('opens a Nikon NEF: preview first, then the developed RAW', async ({ page }
   page.on('pageerror', (error) => errors.push(String(error)));
 
   await page.goto('./');
-  await page.getByTestId('file-input').setInputFiles(NEF);
+  await importAndOpen(page, NEF);
 
   // Shooting info comes from the RAW metadata.
   const develop = page.getByRole('complementary', { name: 'Develop' });
@@ -50,7 +50,7 @@ test('opens a JPEG and shows it straight away', async ({ page }) => {
     const blob = await canvas.convertToBlob({ type: 'image/jpeg' });
     return Array.from(new Uint8Array(await blob.arrayBuffer()));
   });
-  await page.getByTestId('file-input').setInputFiles({
+  await importAndOpen(page, {
     name: 'green.jpg',
     mimeType: 'image/jpeg',
     buffer: Buffer.from(jpeg),
@@ -66,9 +66,7 @@ test('opens a TIFF', async ({ page }) => {
   const rgba = new Uint8Array(width * height * 4).map((_, i) => (i % 4 === 3 ? 255 : 120));
   const tiff = Buffer.from(UTIF.encodeImage(rgba, width, height));
   await page.goto('./');
-  await page
-    .getByTestId('file-input')
-    .setInputFiles({ name: 'grey.tif', mimeType: 'image/tiff', buffer: tiff });
+  await importAndOpen(page, { name: 'grey.tif', mimeType: 'image/tiff', buffer: tiff });
   await expect(page.getByText(/grey\.tif · .* · opened in/)).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Develop' })).toContainText('300 × 200');
 });

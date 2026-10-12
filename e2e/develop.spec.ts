@@ -3,7 +3,7 @@ import UTIF from 'utif';
 import { decodeSrgb, rec2020From, rec2020To, transform } from '../src/color/colorSpaces';
 import { developParams, developPixel } from '../src/develop/developMath';
 import { ALL_SLIDERS, DEFAULT_RECIPE, type Recipe } from '../src/develop/recipe';
-import { centerPixel, setSlider } from './helpers';
+import { centerPixel, setSlider, importAndOpen } from './helpers';
 
 /** A uniform-colour TIFF, so every pixel has the same known value. */
 function solidTiff(rgb: [number, number, number]): Buffer {
@@ -25,7 +25,7 @@ function expected(rgb: [number, number, number], recipe: Recipe): number[] {
 
 async function openTiff(page: import('@playwright/test').Page, rgb: [number, number, number]) {
   await page.goto('./');
-  await page.getByTestId('file-input').setInputFiles({
+  await importAndOpen(page, {
     name: 'patch.tif',
     mimeType: 'image/tiff',
     buffer: solidTiff(rgb),

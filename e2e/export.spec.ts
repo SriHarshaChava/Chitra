@@ -5,7 +5,7 @@ import UTIF from 'utif';
 import { decodeSrgb, rec2020From, rec2020To, transform } from '../src/color/colorSpaces';
 import { developParams, developPixel } from '../src/develop/developMath';
 import { DEFAULT_RECIPE } from '../src/develop/recipe';
-import { setSlider } from './helpers';
+import { setSlider, importAndOpen } from './helpers';
 
 const NEF = 'samples/iss030e122639.NEF';
 
@@ -31,7 +31,7 @@ test('exports an edited photo as a 16-bit TIFF with the exact developed colours'
 }) => {
   const colour: [number, number, number] = [180, 120, 60];
   await page.goto('./');
-  await page.getByTestId('file-input').setInputFiles({
+  await importAndOpen(page, {
     name: 'patch.tif',
     mimeType: 'image/tiff',
     buffer: solidTiff(colour),
@@ -67,7 +67,7 @@ test('exports an edited photo as a 16-bit TIFF with the exact developed colours'
 test('exports a RAW photo as a resized JPEG', async ({ page }) => {
   test.skip(!existsSync(NEF), 'Run `npm run samples` first');
   await page.goto('./');
-  await page.getByTestId('file-input').setInputFiles(NEF);
+  await importAndOpen(page, NEF);
   await expect(page.getByText(/opened in/)).toBeVisible({ timeout: 90_000 });
 
   const { download, bytes } = await exportWith(page, async () => {

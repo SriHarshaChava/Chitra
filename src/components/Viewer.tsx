@@ -7,7 +7,8 @@ import {
   useState,
   type Ref,
 } from 'react';
-import type { Matrix3 } from '../color/colorSpaces';
+import { rec2020To, type Matrix3 } from '../color/colorSpaces';
+import { THUMBNAIL_SIZE } from '../catalog/importPhotos';
 import { formatFileSize } from '../decode/photoInfo';
 import {
   aspectRatio,
@@ -18,7 +19,7 @@ import {
   type Geometry,
 } from '../develop/geometry';
 import { DevelopRenderer, type GpuImage, type RenderSettings } from '../gpu/renderer';
-import type { CurrentPhoto } from '../photos/usePhotoSession';
+import type { CurrentPhoto } from '../photos/usePhotoLoader';
 import { displayColorSpace } from '../render/displayColor';
 import type { Histogram } from '../render/histogram';
 import type { SourceImage } from '../render/sourceImage';
@@ -43,6 +44,8 @@ export interface Exporter {
   exportPhoto(
     job: Pick<ExportJob, 'geometry' | 'develop' | 'settings' | 'onProgress'>,
   ): Promise<ExportResult>;
+  /** A small sRGB JPEG of the photo as edited, for the library grid. */
+  makeThumbnail(geometry: Geometry, develop: RenderSettings): Promise<Blob>;
 }
 
 interface ViewerProps {
@@ -167,7 +170,7 @@ export function Viewer({
     callbacks.current = { onHistogram, onGpuReset };
   });
 
-  useImperativeHandle(
+  useImperativeHandle<Exporter, Exporter>(
     exporterRef,
     () => ({
       async exportPhoto(job) {
@@ -175,6 +178,29 @@ export function Viewer({
         const shown = gpuRef.current;
         if (!renderer || !shown) throw new Error('No photo is loaded.');
         return runExport({ ...job, renderer, gpu: shown.gpu, layout: shown.source });
+      },
+      async makeThumbnail(geometry: Geometry, develop: RenderSettings) {
+        const renderer = rendererRef.current;
+        const shown = gpuRef.current;
+        if (!renderer || !shown) throw new Error('No photo is loaded.');
+        const layout = computeLayout(shown.source, geometry, false);
+        const { pixels, width, height } = renderer.renderSmall(
+          shown.gpu,
+          layout.imageToCrop,
+          layout.crop,
+          develop,
+          THUMBNAIL_SIZE,
+          rec2020To('srgb'),
+        );
+        const canvas = new OffscreenCanvas(width, height);
+        canvas
+          .getContext('2d')!
+          .putImageData(
+            new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), width, height),
+            0,
+            0,
+          );
+        return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
       },
     }),
     [],
