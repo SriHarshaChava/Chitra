@@ -8,7 +8,7 @@ Chitra is a **website that runs entirely in your browser**. Photos are processed
 - **Works in:** Chrome or Edge on Windows, and Safari on iPad (iPadOS 26 or later recommended, for WebGPU).
 - **Focus:** Nikon RAW (NEF) editing. JPEG, PNG, TIFF and video support are planned.
 
-> **Status: Phase 3a (Library).** Import Nikon NEF, JPEG, PNG and TIFF files into a library that stays in your browser; rate, flag, label, tag, filter and sort them; edit white balance, exposure, tone and colour; crop and straighten; export as JPEG or 16-bit TIFF. See [docs/PLAN.md](docs/PLAN.md).
+> **Status: Phase 3 complete (Library).** Import Nikon NEF, JPEG, PNG and TIFF files into a library that stays in your browser; rate, flag, label, tag, filter and sort; edit tone and colour, crop and straighten; copy/paste settings and use presets; export one or many photos as JPEG or 16-bit TIFF; back up and restore your library. See [docs/PLAN.md](docs/PLAN.md).
 
 ## Using Chitra
 
@@ -22,6 +22,10 @@ Chitra is a **website that runs entirely in your browser**. Photos are processed
 - **Undo / redo:** the ↶ ↷ buttons, or Ctrl+Z / Ctrl+Shift+Z (⌘ on a Mac keyboard). **Reset** clears all adjustments.
 - **Crop:** press **Crop** in the bottom toolbar (or the `R` key). Drag the corners or edges to resize, drag inside to move. Choose an aspect ratio (1:1, 4:5, 3:2, 16:9…) and ⇄ to switch portrait/landscape. **Straighten** levels the horizon and automatically trims the empty corners. **Left/Right** rotate by 90°, **Flip** mirrors. Press **Done**, Enter or Esc to finish. The Info panel shows the cropped size.
 - **Export:** **Export…** in the top bar (or Ctrl/⌘ E). Choose JPEG (with quality) or 16-bit TIFF, the picture size (full size, long edge in pixels, megapixels or percentage — photos are never enlarged) and the colour space (sRGB for sharing, Display P3, or Adobe RGB for printing). The file downloads as `NAME-chitra.jpg`/`.tif`; on iPad, **Share…** offers _Save Image_ to put it in Photos.
+- **Presets:** in Develop, click a preset (Wildlife pop, Soft portrait, Recover highlights, Black & white) to apply it; **Save as preset…** keeps your own. Presets only change the sliders they contain. In the Library, **Apply preset…** works on all selected photos.
+- **Copy / paste settings:** **Copy settings** (Ctrl/⌘ Shift C) lets you choose what to copy (white balance, tone, presence, crop); **Paste** (Ctrl/⌘ Shift V) applies it to the open photo, or in the Library to every selected photo. Undo takes a paste back.
+- **Export many photos:** select photos in the Library and choose **Export N photos…** (or Ctrl/⌘ E). Several photos download as one ZIP; on iPad, **Share…** saves them all to Photos.
+- **Back up your library:** **Back up** in the Library saves ratings, keywords, edits and presets to a small `.json` file (not the photos themselves); **Restore…** puts them back, matching photos by file name and size — for example after re-importing on another device. A reminder appears if you haven't backed up for two weeks.
 - **Before / after:** the **Before** button or the `\` key shows the photo without your edits.
 - Edits, ratings and keywords are saved automatically in the library. Your original files are only read, never changed.
 

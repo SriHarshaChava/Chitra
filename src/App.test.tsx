@@ -19,6 +19,9 @@ vi.mock('./catalog/db', () => ({
   putThumbnail: async () => {},
   getThumbnail: async () => undefined,
   deletePhotos: async (ids: string[]) => ids.forEach((id) => memory.photos.delete(id)),
+  getAllPresets: async () => [],
+  putPreset: async () => {},
+  deletePreset: async () => {},
 }));
 // Decoding and EXIF need real browser features; these tests only check the interface.
 vi.mock('./photos/loadPhoto', () => ({

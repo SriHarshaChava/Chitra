@@ -231,3 +231,21 @@ describe('legacy recipe store', () => {
     expect(loadRecipe('k', storage)).toBeNull();
   });
 });
+
+describe('reconcile (changes made outside Develop)', () => {
+  it('turns an outside change into an undo step', async () => {
+    const { reconcile } = await import('./useDevelop');
+    const h = commit(createHistory(DEFAULT_RECIPE), recipe({ exposure: 0.5 }));
+    const pasted = recipe({ exposure: 0.5, vibrance: 40 });
+    const next = reconcile(h, pasted);
+    expect(next.current).toEqual(pasted);
+    expect(undo(next).current.vibrance).toBe(0);
+  });
+
+  it('leaves an up-to-date history alone', async () => {
+    const { reconcile } = await import('./useDevelop');
+    const h = commit(createHistory(DEFAULT_RECIPE), recipe({ exposure: 0.5 }));
+    expect(reconcile(h, recipe({ exposure: 0.5 }))).toBe(h);
+    expect(reconcile(undefined, recipe({ tint: 3 })).current.tint).toBe(3);
+  });
+});

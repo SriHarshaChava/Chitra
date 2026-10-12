@@ -1327,3 +1327,84 @@ p {
   min-height: 32px;
   font-size: 14px;
 }
+
+/* ---------- Presets, copy/paste, backup ---------- */
+
+.preset-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.preset-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.preset-apply {
+  flex: 1;
+  min-height: 34px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.preset-apply:hover:not(:disabled) {
+  background: var(--panel-raised);
+}
+
+.preset-apply:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.preset-delete {
+  min-width: 32px;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.preset-select {
+  min-height: 40px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  font-size: 14px;
+}
+
+.check-row input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.backup-menu {
+  display: flex;
+  gap: 4px;
+}
+
+.toast-notice {
+  bottom: calc(140px + env(safe-area-inset-bottom));
+}

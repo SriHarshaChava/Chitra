@@ -90,7 +90,7 @@ test('undo, redo, reset and before/after', async ({ page }) => {
   await expect(page.locator('output[for=slider-exposure]')).toHaveText('0.00');
 
   await setSlider(page.locator('#slider-contrast'), 50);
-  await page.getByRole('button', { name: 'Reset' }).click();
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
   await expect(page.locator('output[for=slider-contrast]')).toHaveText('0');
   await expect.poll(() => centerPixel(page)).toEqual(original);
 });

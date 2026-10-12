@@ -7,8 +7,7 @@ import {
   useState,
   type Ref,
 } from 'react';
-import { rec2020To, type Matrix3 } from '../color/colorSpaces';
-import { THUMBNAIL_SIZE } from '../catalog/importPhotos';
+import type { Matrix3 } from '../color/colorSpaces';
 import { formatFileSize } from '../decode/photoInfo';
 import {
   aspectRatio,
@@ -37,6 +36,7 @@ import {
   type View,
 } from '../render/viewTransform';
 import { runExport, type ExportJob, type ExportResult } from '../export/runExport';
+import { renderThumbnail } from '../export/thumbnails';
 import { CropOverlay } from './CropOverlay';
 
 /** Lets the export dialog render the photo with the viewer's GPU renderer. */
@@ -183,24 +183,7 @@ export function Viewer({
         const renderer = rendererRef.current;
         const shown = gpuRef.current;
         if (!renderer || !shown) throw new Error('No photo is loaded.');
-        const layout = computeLayout(shown.source, geometry, false);
-        const { pixels, width, height } = renderer.renderSmall(
-          shown.gpu,
-          layout.imageToCrop,
-          layout.crop,
-          develop,
-          THUMBNAIL_SIZE,
-          rec2020To('srgb'),
-        );
-        const canvas = new OffscreenCanvas(width, height);
-        canvas
-          .getContext('2d')!
-          .putImageData(
-            new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), width, height),
-            0,
-            0,
-          );
-        return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+        return renderThumbnail(renderer, shown.gpu, shown.source, geometry, develop);
       },
     }),
     [],

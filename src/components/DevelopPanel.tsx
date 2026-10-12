@@ -44,6 +44,8 @@ interface DevelopPanelProps {
   cropPanel?: ReactNode;
   /** Rating, flag, label and keywords of the photo. */
   meta?: ReactNode;
+  /** Presets and copy/paste, shown above the sliders. */
+  presets?: ReactNode;
 }
 
 export function DevelopPanel({
@@ -58,6 +60,7 @@ export function DevelopPanel({
   cropSize,
   cropPanel,
   meta,
+  presets,
 }: DevelopPanelProps) {
   const disabled = Boolean(disabledReason);
   return (
@@ -117,6 +120,7 @@ export function DevelopPanel({
       {disabledReason && <p className="panel-note">{disabledReason}</p>}
 
       {cropPanel}
+      {!cropPanel && presets}
       {!cropPanel &&
         SLIDER_SECTIONS.map((section) => (
           <section key={section.title} className="panel-section">

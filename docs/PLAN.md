@@ -82,7 +82,7 @@ Each phase ends with something usable on both Windows and iPad.
 | 2b  | Crop ✅           | Crop with aspect ratios, straighten (auto-trims corners), rotate 90°, flip                                                                                               |
 | 2c  | Export ✅         | Export JPEG and 16-bit TIFF at full or reduced size (long edge, megapixels, %), with colour profile                                                                      |
 | 3a  | Library ✅        | Catalog in IndexedDB (originals copied), grid view, ratings/flags/colour labels, keywords, filters and sorting, thumbnails that show edits                               |
-| 3b  | Library tools     | Copy/paste settings, presets, batch export, catalog backup/restore                                                                                                       |
+| 3b  | Library tools ✅  | Copy/paste settings, presets, batch export, catalog backup/restore                                                                                                       |
 | 4   | Detail and colour | Tone curve, sharpening, noise reduction, HSL/colour mixer, colour grading, lens corrections, auto white balance and tone                                                 |
 | 5   | Local adjustments | Brush, linear and radial gradients, mask combining; later AI subject/sky masks on-device                                                                                 |
 | 6   | Video v1          | Import Nikon MP4/MOV, playback, trim/split, single-track timeline, shared colour pipeline, MP4 export                                                                    |

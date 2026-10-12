@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { backupFileName, makeBackup, parseBackup, planRestore } from './catalog/backup';
 import { applyFilter, DEFAULT_FILTER, type LibraryFilter } from './catalog/filters';
+import { applyPreset, presetValues, type Preset } from './catalog/presets';
 import { COLOR_LABELS, type CatalogPhoto, type PhotoChanges } from './catalog/types';
 import { useCatalog } from './catalog/useCatalog';
 import { BASE_CONTRAST } from './color/colorSpaces';
+import { backupIsDue, markBackedUp } from './catalog/backupReminder';
+import { BackupMenu } from './components/BackupMenu';
 import { CropPanel } from './components/CropPanel';
 import { DevelopPanel } from './components/DevelopPanel';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
-import { ExportDialog } from './components/ExportDialog';
+import { ExportDialog, type ExportOutput } from './components/ExportDialog';
+import { GroupDialog } from './components/GroupDialog';
+import { PresetsSection } from './components/PresetsSection';
 import { FilterBar } from './components/FilterBar';
 import { ImportStatus } from './components/ImportStatus';
 import { InfoPanel } from './components/InfoPanel';
@@ -19,7 +25,17 @@ import { ACCEPTED_FILE_TYPES } from './decode/fileTypes';
 import { developParams } from './develop/developMath';
 import { cropPixelSize, frameSize, isDefaultGeometry, type Geometry } from './develop/geometry';
 import { DEFAULT_RECIPE, type Recipe } from './develop/recipe';
+import {
+  applyGroups,
+  DEFAULT_COPY_GROUPS,
+  type CopiedSettings,
+  type SettingsGroup,
+} from './develop/settingsGroups';
 import { useDevelop } from './develop/useDevelop';
+import { exportPhotos } from './export/batchExport';
+import { exportFileName, type ExportSettings } from './export/exportSettings';
+import { withDevelopedPhoto } from './export/offscreen';
+import { renderThumbnail } from './export/thumbnails';
 import type { Capability } from './platform/capabilities';
 import { usePhotoLoader } from './photos/usePhotoLoader';
 import type { Histogram } from './render/histogram';
@@ -49,6 +65,11 @@ export function App({ detectCapabilities }: AppProps) {
   const [filter, setFilter] = useState<LibraryFilter>(DEFAULT_FILTER);
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [copied, setCopied] = useState<CopiedSettings | null>(null);
+  const [copyGroups, setCopyGroups] = useState<SettingsGroup[]>(DEFAULT_COPY_GROUPS);
+  const [groupDialog, setGroupDialog] = useState<'copy' | 'preset' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [backupDue, setBackupDue] = useState(backupIsDue);
   const exporterRef = useRef<Exporter>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const closeDiagnostics = useCallback(() => setShowDiagnostics(false), []);
@@ -139,7 +160,12 @@ export function App({ detectCapabilities }: AppProps) {
   const frame = source ? frameSize(frameSize(source, source.rotation), geometry.rotate) : null;
   const cropSize =
     frame && !isDefaultGeometry(geometry) ? cropPixelSize(frame, geometry.crop) : undefined;
-  const { preview: previewRecipe, commit: commitRecipe, recipe } = develop;
+  const {
+    preview: previewRecipe,
+    commit: commitRecipe,
+    recipe,
+    remember: rememberHistory,
+  } = develop;
   const previewGeometry = useCallback(
     (g: Geometry) => previewRecipe({ ...recipe, geometry: g }),
     [previewRecipe, recipe],
@@ -151,6 +177,7 @@ export function App({ detectCapabilities }: AppProps) {
   const toggleCrop = useCallback(() => setCropRequested((v) => !v), []);
   const toggleBefore = useCallback(() => setShowingBefore((v) => !v), []);
   const closeExport = useCallback(() => setShowExport(false), []);
+  const closeGroupDialog = useCallback(() => setGroupDialog(null), []);
 
   // ---- Library ----
   const openFiles = useCallback(() => fileInput.current?.click(), []);
@@ -221,6 +248,153 @@ export function App({ detectCapabilities }: AppProps) {
     [targetIds, updatePhotos],
   );
 
+  /** Photos chosen for library-wide tools (paste, presets, export). */
+  const toolPhotos = useMemo(
+    () => allPhotos.filter((p) => targetIds.includes(p.id)),
+    [allPhotos, targetIds],
+  );
+
+  // Pasted settings, presets and restores change photos that aren't open, so their
+  // thumbnails are refreshed in the background, one photo at a time.
+  const { getFile } = catalog;
+  const refreshInBackground = useCallback(
+    (photos: CatalogPhoto[]) => {
+      for (const photo of photos) {
+        getFile(photo.id)
+          .then((file) =>
+            withDevelopedPhoto(file, photo.recipe, (d) =>
+              renderThumbnail(d.renderer, d.gpu, d.layout, photo.recipe.geometry, d.develop),
+            ),
+          )
+          .then((blob) => setThumbnail(photo.id, blob))
+          .catch((e: unknown) => console.error(e));
+      }
+    },
+    [getFile, setThumbnail],
+  );
+
+  const { updateEach } = catalog;
+  /** Changes the recipe of the target photos: through undo history in Develop. */
+  const changeRecipes = useCallback(
+    (change: (recipe: Recipe) => Recipe) => {
+      if (module === 'develop') {
+        if (editable) commitRecipe(change(recipe));
+        return;
+      }
+      const now = Date.now();
+      rememberHistory(toolPhotos); // so Undo in Develop can take the change back
+      const updated = toolPhotos.map((p) => ({ ...p, recipe: change(p.recipe), editedAt: now }));
+      updateEach(updated.map((p) => ({ id: p.id, changes: { recipe: p.recipe, editedAt: now } })));
+      refreshInBackground(updated);
+    },
+    [
+      module,
+      editable,
+      commitRecipe,
+      recipe,
+      toolPhotos,
+      updateEach,
+      refreshInBackground,
+      rememberHistory,
+    ],
+  );
+
+  const copySettings = useCallback(
+    (groups: SettingsGroup[]) => {
+      const source = module === 'develop' ? recipe : toolPhotos[0]?.recipe;
+      if (!source) return;
+      setCopyGroups(groups);
+      setCopied({ recipe: source, groups });
+      setGroupDialog(null);
+      setNotice('Settings copied. Select photos and paste with Ctrl/⌘ Shift V.');
+    },
+    [module, recipe, toolPhotos],
+  );
+
+  const pasteSettings = useCallback(() => {
+    if (!copied) return;
+    changeRecipes((r) => applyGroups(r, copied.recipe, copied.groups));
+  }, [copied, changeRecipes]);
+
+  const applyPresetToTargets = useCallback(
+    (preset: Preset) => changeRecipes((r) => applyPreset(r, preset)),
+    [changeRecipes],
+  );
+
+  const { savePreset, deletePreset } = catalog;
+  const saveNewPreset = useCallback(
+    (groups: SettingsGroup[], name: string) => {
+      void savePreset({
+        id: crypto.randomUUID(),
+        name,
+        builtIn: false,
+        values: presetValues(recipe, groups),
+        createdAt: Date.now(),
+      });
+      setGroupDialog(null);
+    },
+    [savePreset, recipe],
+  );
+
+  const removePreset = useCallback(
+    (preset: Preset) => {
+      if (window.confirm(`Delete the preset "${preset.name}"?`)) void deletePreset(preset.id);
+    },
+    [deletePreset],
+  );
+
+  const backUpLibrary = useCallback(() => {
+    const text = makeBackup(allPhotos, catalog.userPresets);
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = backupFileName();
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    markBackedUp();
+    setBackupDue(false);
+    setNotice(
+      `Library backup saved (${allPhotos.length} photos). Keep it with your original photos.`,
+    );
+  }, [allPhotos, catalog.userPresets]);
+
+  const restoreLibrary = useCallback(
+    async (file: File) => {
+      try {
+        const backup = parseBackup(await file.text());
+        const plan = planRestore(allPhotos, backup);
+        rememberHistory(allPhotos.filter((p) => plan.updates.some((u) => u.id === p.id)));
+        updateEach(plan.updates);
+        for (const preset of backup.presets) await savePreset(preset);
+        const restoredIds = new Set(plan.updates.map((u) => u.id));
+        refreshInBackground(
+          allPhotos
+            .filter((p) => restoredIds.has(p.id))
+            .map((p) => ({ ...p, ...plan.updates.find((u) => u.id === p.id)!.changes })),
+        );
+        setNotice(
+          `Restored ${plan.updates.length} photo${plan.updates.length === 1 ? '' : 's'}` +
+            (backup.presets.length ? ` and ${backup.presets.length} presets` : '') +
+            '.' +
+            (plan.missing.length
+              ? ` Not in the library (import them, then restore again): ${plan.missing.join(', ')}.`
+              : ''),
+        );
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [allPhotos, updateEach, savePreset, refreshInBackground, rememberHistory],
+  );
+
+  const runBatchExport = useCallback(
+    async (
+      exportSettings: ExportSettings,
+      onProgress: (fraction: number, current?: string) => void,
+    ): Promise<ExportOutput> => exportPhotos(toolPhotos, getFile, exportSettings, onProgress),
+    [toolPhotos, getFile],
+  );
+
   const { remove: removeFromCatalog } = catalog;
   const removeSelected = useCallback(async () => {
     const ids = targetIds;
@@ -265,9 +439,19 @@ export function App({ detectCapabilities }: AppProps) {
         redo();
         return;
       }
-      if (command && editable && key === 'e') {
+      if (command && key === 'e' && (editable || (module === 'library' && targetIds.length))) {
         event.preventDefault();
         setShowExport(true);
+        return;
+      }
+      if (command && event.shiftKey && key === 'c' && (editable || targetIds.length === 1)) {
+        event.preventDefault();
+        setGroupDialog('copy');
+        return;
+      }
+      if (command && event.shiftKey && key === 'v') {
+        event.preventDefault();
+        pasteSettings();
         return;
       }
       if (command && module === 'library' && key === 'a') {
@@ -314,6 +498,8 @@ export function App({ detectCapabilities }: AppProps) {
     switchModule,
     moveActive,
     removeSelected,
+    targetIds,
+    pasteSettings,
   ]);
 
   const layoutClass = [
@@ -359,7 +545,7 @@ export function App({ detectCapabilities }: AppProps) {
         onToggleDevelop={() => setShowDevelop((v) => !v)}
         onOpenDiagnostics={() => setShowDiagnostics(true)}
         onExport={() => setShowExport(true)}
-        canExport={editable}
+        canExport={editable || (module === 'library' && targetIds.length > 0)}
       />
 
       {module === 'library' ? (
@@ -374,6 +560,11 @@ export function App({ detectCapabilities }: AppProps) {
                 onChange={setFilter}
                 shown={visible.length}
                 total={allPhotos.length}
+              />
+              <BackupMenu
+                onBackup={backUpLibrary}
+                onRestore={(file) => void restoreLibrary(file)}
+                remind={backupDue && allPhotos.length > 0}
               />
             </div>
             {catalog.error && (
@@ -416,6 +607,44 @@ export function App({ detectCapabilities }: AppProps) {
                     </section>
                   )}
                   <div className="panel-section library-actions">
+                    <button type="button" className="button" onClick={() => setShowExport(true)}>
+                      Export{' '}
+                      {selectedPhotos.length === 1 ? 'photo' : `${selectedPhotos.length} photos`}…
+                    </button>
+                    <button
+                      type="button"
+                      className="button"
+                      disabled={!copied}
+                      onClick={pasteSettings}
+                      title="Paste copied settings (Ctrl/⌘ Shift V)"
+                    >
+                      Paste settings
+                    </button>
+                    {selectedPhotos.length === 1 && (
+                      <button
+                        type="button"
+                        className="button"
+                        onClick={() => setGroupDialog('copy')}
+                      >
+                        Copy settings…
+                      </button>
+                    )}
+                    <select
+                      className="preset-select"
+                      aria-label="Apply preset"
+                      value=""
+                      onChange={(event) => {
+                        const preset = catalog.presets.find((p) => p.id === event.target.value);
+                        if (preset) applyPresetToTargets(preset);
+                      }}
+                    >
+                      <option value="">Apply preset…</option>
+                      {catalog.presets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
                     {selectedPhotos.length === 1 && (
                       <button
                         type="button"
@@ -477,6 +706,18 @@ export function App({ detectCapabilities }: AppProps) {
               onToggleBefore={toggleBefore}
               cropSize={cropSize}
               meta={activePhoto ? metaPanel([activePhoto]) : null}
+              presets={
+                <PresetsSection
+                  presets={catalog.presets}
+                  disabled={!editable}
+                  canPaste={Boolean(copied)}
+                  onApply={applyPresetToTargets}
+                  onDelete={removePreset}
+                  onSaveNew={() => setGroupDialog('preset')}
+                  onCopy={() => setGroupDialog('copy')}
+                  onPaste={pasteSettings}
+                />
+              }
               cropPanel={
                 cropMode && frame ? (
                   <CropPanel
@@ -512,22 +753,64 @@ export function App({ detectCapabilities }: AppProps) {
         onDismiss={catalog.dismissReport}
       />
       {dragging && <div className="drop-hint">Drop photos to import them</div>}
-      {showExport && editable && activePhoto && frame && (
+      {showExport && module === 'develop' && editable && activePhoto && frame && (
         <ExportDialog
-          fileName={activePhoto.name}
+          count={1}
           fullSize={cropPixelSize(frame, geometry.crop)}
           onClose={closeExport}
-          onExport={(exportSettings, onProgress) => {
+          onExport={async (exportSettings, onProgress) => {
             const exporter = exporterRef.current;
-            if (!exporter) return Promise.reject(new Error('The viewer is not ready.'));
-            return exporter.exportPhoto({
+            if (!exporter) throw new Error('The viewer is not ready.');
+            const result = await exporter.exportPhoto({
               geometry,
               develop: exportDevelop,
               settings: exportSettings,
               onProgress,
             });
+            const file = new File(
+              [result.bytes as Uint8Array<ArrayBuffer>],
+              exportFileName(activePhoto.name, exportSettings.format),
+              { type: result.mimeType },
+            );
+            return { file, files: [file], failed: [], width: result.width, height: result.height };
           }}
         />
+      )}
+      {showExport && module === 'library' && toolPhotos.length > 0 && (
+        <ExportDialog count={toolPhotos.length} onClose={closeExport} onExport={runBatchExport} />
+      )}
+      {groupDialog === 'copy' && (
+        <GroupDialog
+          title="Copy settings"
+          confirmLabel="Copy"
+          initialGroups={copyGroups}
+          onConfirm={(groups) => copySettings(groups)}
+          onClose={closeGroupDialog}
+        />
+      )}
+      {groupDialog === 'preset' && (
+        <GroupDialog
+          title="Save as preset"
+          confirmLabel="Save preset"
+          askName
+          initialGroups={DEFAULT_COPY_GROUPS}
+          disabledGroups={['geometry']}
+          onConfirm={saveNewPreset}
+          onClose={closeGroupDialog}
+        />
+      )}
+      {notice && (
+        <div className="toast toast-notice" role="status">
+          <span>{notice}</span>
+          <button
+            type="button"
+            className="icon-button toast-close"
+            aria-label="Dismiss"
+            onClick={() => setNotice(null)}
+          >
+            ✕
+          </button>
+        </div>
       )}
       {showDiagnostics && (
         <DiagnosticsPanel onClose={closeDiagnostics} detect={detectCapabilities} />
