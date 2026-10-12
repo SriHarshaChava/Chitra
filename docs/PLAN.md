@@ -66,6 +66,8 @@ Everything is free.
 | Tests              | Vitest, Testing Library, Playwright            | MIT / MIT / Apache-2.0                      |
 | CI and hosting     | GitHub Actions, GitHub Pages                   | Free for public repositories                |
 
+Full list: [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). How RAW decoding works: [decisions/0002-raw-pipeline.md](decisions/0002-raw-pipeline.md).
+
 **Licence rule:** Chitra is MIT-licensed. darktable and RawTherapee are GPL. We may learn from their published algorithms but must not copy their code.
 
 ## Phases
@@ -75,7 +77,7 @@ Each phase ends with something usable on both Windows and iPad.
 | #   | Phase             | Delivers                                                                                                                                                                                   |
 | --- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 0   | Foundations ✅    | Project setup, editor layout, system check, debug console, CI, GitHub Pages deployment                                                                                                     |
-| 1   | RAW viewer        | LibRaw WASM in a Worker, instant embedded preview, zoom/pan, histogram, EXIF panel, JPEG/PNG/TIFF                                                                                          |
+| 1   | RAW viewer ✅     | LibRaw WASM in a Worker, instant embedded preview, zoom/pan, histogram, EXIF panel, JPEG/PNG/TIFF                                                                                          |
 | 2   | Core Develop      | White balance, exposure, contrast, highlights/shadows, whites/blacks, tone curve, vibrance/saturation, crop/rotate/straighten, before/after, undo/redo, recipes, JPEG + 16-bit TIFF export |
 | 3   | Library           | Import, SQLite catalog, thumbnails, ratings/flags/colours, filters, keywords, presets, copy/paste settings, batch export, catalog backup/restore                                           |
 | 4   | Detail and colour | Sharpening, noise reduction, HSL/colour mixer, colour grading, lens corrections, auto white balance and tone                                                                               |
