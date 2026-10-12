@@ -5,14 +5,20 @@
  * every screen pixel from the stored linear data. Moving a slider only changes a few
  * numbers ("uniforms") sent to the GPU, so even a 24 MP photo updates instantly.
  */
-import { rec2020From, rec2020To, type DisplayColorSpace, type Matrix3 } from '../color/colorSpaces';
+import {
+  multiply,
+  rec2020From,
+  rec2020To,
+  type DisplayColorSpace,
+  type Matrix3,
+} from '../color/colorSpaces';
 import type { DevelopParams } from '../develop/developMath';
 import { computeHistogram, type Histogram } from '../render/histogram';
 import type { Rotation, SourceImage } from '../render/sourceImage';
 import type { Rect } from '../render/tiles';
 import type { View } from '../render/viewTransform';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shaders';
-import { applyToPoint, imageToClipMatrix } from './transform';
+import { applyToPoint, viewToClipMatrix } from './transform';
 
 const IDENTITY: Matrix3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 /** Above this zoom, pixels are drawn as crisp squares (useful for checking focus). */
@@ -40,6 +46,16 @@ export interface GpuImage {
 
 /** `null` shows the image unedited (camera previews). */
 export type RenderSettings = DevelopParams | null;
+
+/** Where and how the photo appears on screen. */
+export interface Scene {
+  /** Image pixel → display pixel (rotation, flip, straighten and crop offset). */
+  imageToDisplay: Matrix3;
+  /** Zoom and pan of the display pixels. */
+  view: View;
+  /** Only this display-pixel rectangle is visible (the crop); `null` shows everything. */
+  visible: Rect | null;
+}
 
 type UniformName =
   | 'u_rect'
@@ -166,37 +182,58 @@ export class DevelopRenderer {
   }
 
   /** Draws `image` (or just the background) to the canvas. */
-  draw(image: GpuImage | null, view: View | null, settings: RenderSettings) {
+  draw(image: GpuImage | null, scene: Scene | null, settings: RenderSettings) {
     const gl = this.gl;
     const width = gl.drawingBufferWidth;
     const height = gl.drawingBufferHeight;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, width, height);
+    gl.disable(gl.SCISSOR_TEST);
     gl.clearColor(BACKGROUND, BACKGROUND, BACKGROUND, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    if (!image || !view) return;
+    if (!image || !scene) return;
 
-    const toClip = imageToClipMatrix(image, view, width, height);
+    const { view, visible } = scene;
+    if (visible) {
+      // Hide everything outside the crop. WebGL counts y from the bottom.
+      const x = Math.floor(view.x + visible.x * view.scale);
+      const y = Math.floor(view.y + visible.y * view.scale);
+      const w = Math.ceil(visible.width * view.scale);
+      const h = Math.ceil(visible.height * view.scale);
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(x, height - (y + h), w, h);
+    }
+
+    const toClip = multiply(viewToClipMatrix(view, width, height), scene.imageToDisplay);
     this.useProgram(image, toClip, settings);
 
     const overviewScale = image.overview.width / image.width;
     if (view.scale <= overviewScale) {
       this.drawRect(image.overview.texture, fullRect(image), fullRect(image), gl.LINEAR);
-      return;
+    } else {
+      const magFilter = view.scale >= PIXELATED_FROM_SCALE ? gl.NEAREST : gl.LINEAR;
+      for (const tile of image.tiles) {
+        if (!isVisible(tile.core, toClip)) continue;
+        this.drawRect(tile.texture, tile.core, tile.padded, magFilter);
+      }
     }
-    const magFilter = view.scale >= PIXELATED_FROM_SCALE ? gl.NEAREST : gl.LINEAR;
-    for (const tile of image.tiles) {
-      if (!isVisible(tile.core, toClip)) continue;
-      this.drawRect(tile.texture, tile.core, tile.padded, magFilter);
-    }
+    gl.disable(gl.SCISSOR_TEST);
   }
 
-  /** Develops a small version of the whole photo and counts its pixel values. */
-  histogram(image: GpuImage, settings: RenderSettings): Histogram {
+  /**
+   * Develops a small version of the final (cropped) photo and counts its pixel values.
+   * @param imageToCrop image pixel → cropped photo pixel
+   */
+  histogram(
+    image: GpuImage,
+    imageToCrop: Matrix3,
+    cropSize: { width: number; height: number },
+    settings: RenderSettings,
+  ): Histogram {
     const gl = this.gl;
-    const scale = Math.min(1, HISTOGRAM_SIZE / Math.max(image.width, image.height));
-    const w = Math.max(1, Math.round(image.width * scale));
-    const h = Math.max(1, Math.round(image.height * scale));
+    const scale = Math.min(1, HISTOGRAM_SIZE / Math.max(cropSize.width, cropSize.height));
+    const w = Math.max(1, Math.round(cropSize.width * scale));
+    const h = Math.max(1, Math.round(cropSize.height * scale));
 
     const target = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, target);
@@ -205,10 +242,11 @@ export class DevelopRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
     gl.viewport(0, 0, w, h);
+    gl.disable(gl.SCISSOR_TEST);
 
-    // Map the whole (unrotated) image onto the small framebuffer.
-    const toClip: Matrix3 = [2 / image.width, 0, -1, 0, 2 / image.height, -1, 0, 0, 1];
-    this.useProgram(image, toClip, settings);
+    // Map the cropped photo onto the whole small framebuffer.
+    const cropToClip: Matrix3 = [2 / cropSize.width, 0, -1, 0, 2 / cropSize.height, -1, 0, 0, 1];
+    this.useProgram(image, multiply(cropToClip, imageToCrop), settings);
     this.drawRect(image.overview.texture, fullRect(image), fullRect(image), gl.LINEAR);
 
     const pixels = new Uint8Array(w * h * 4);

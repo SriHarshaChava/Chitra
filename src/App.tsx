@@ -6,7 +6,9 @@ import { LibraryPanel } from './components/LibraryPanel';
 import { TopBar } from './components/TopBar';
 import { Viewer } from './components/Viewer';
 import { ACCEPTED_FILE_TYPES } from './decode/fileTypes';
+import { CropPanel } from './components/CropPanel';
 import { developParams } from './develop/developMath';
+import { cropPixelSize, frameSize, isDefaultGeometry, type Geometry } from './develop/geometry';
 import { DEFAULT_RECIPE } from './develop/recipe';
 import { photoKey } from './develop/recipeStore';
 import { useDevelop } from './develop/useDevelop';
@@ -31,6 +33,7 @@ export function App({ detectCapabilities }: AppProps) {
   const [dragging, setDragging] = useState(false);
   const closeDiagnostics = useCallback(() => setShowDiagnostics(false), []);
   const [showingBefore, setShowingBefore] = useState(false);
+  const [cropRequested, setCropRequested] = useState(false);
   const [histogram, setHistogram] = useState<Histogram>();
   const fileInput = useRef<HTMLInputElement>(null);
   const session = usePhotoSession();
@@ -56,6 +59,23 @@ export function App({ detectCapabilities }: AppProps) {
     return developParams(showingBefore ? DEFAULT_RECIPE : develop.recipe, baseContrast);
   }, [source, showingBefore, develop.recipe, baseContrast]);
 
+  // Crop tool: only while the photo can be edited.
+  const cropMode = cropRequested && !disabledReason;
+  const geometry = develop.recipe.geometry;
+  const frame = source ? frameSize(frameSize(source, source.rotation), geometry.rotate) : null;
+  const cropSize =
+    frame && !isDefaultGeometry(geometry) ? cropPixelSize(frame, geometry.crop) : undefined;
+  const { preview: previewRecipe, commit: commitRecipe, recipe } = develop;
+  const previewGeometry = useCallback(
+    (g: Geometry) => previewRecipe({ ...recipe, geometry: g }),
+    [previewRecipe, recipe],
+  );
+  const commitGeometry = useCallback(
+    (g: Geometry) => commitRecipe({ ...recipe, geometry: g }),
+    [commitRecipe, recipe],
+  );
+  const toggleCrop = useCallback(() => setCropRequested((v) => !v), []);
+
   const openFiles = useCallback(() => fileInput.current?.click(), []);
   const toggleBefore = useCallback(() => setShowingBefore((v) => !v), []);
 
@@ -77,14 +97,22 @@ export function App({ detectCapabilities }: AppProps) {
         redo();
         return;
       }
-      if (event.target instanceof HTMLInputElement || command) return;
+      if (cropMode && (event.key === 'Enter' || event.key === 'Escape')) {
+        setCropRequested(false);
+        return;
+      }
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) {
+        return;
+      }
+      if (command) return;
+      if (event.key.toLowerCase() === 'r' && editable) setCropRequested((v) => !v);
       if (event.key === 'ArrowRight') selectRelative(1);
       if (event.key === 'ArrowLeft') selectRelative(-1);
       if (event.key === '\\' && editable) setShowingBefore((v) => !v);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectRelative, undo, redo, editable]);
+  }, [selectRelative, undo, redo, editable, cropMode]);
 
   const layoutClass = [
     'workspace',
@@ -134,6 +162,12 @@ export function App({ detectCapabilities }: AppProps) {
           fileSize={file?.size}
           settings={settings}
           showingBefore={showingBefore && editable}
+          geometry={geometry}
+          cropMode={cropMode}
+          onGeometryPreview={previewGeometry}
+          onGeometryCommit={commitGeometry}
+          onToggleCrop={toggleCrop}
+          canCrop={editable}
           onOpenFiles={openFiles}
           onHistogram={setHistogram}
           onGpuReset={session.reload}
@@ -148,6 +182,18 @@ export function App({ detectCapabilities }: AppProps) {
             disabledReason={disabledReason}
             showingBefore={showingBefore}
             onToggleBefore={toggleBefore}
+            cropSize={cropSize}
+            cropPanel={
+              cropMode && frame ? (
+                <CropPanel
+                  geometry={geometry}
+                  frame={frame}
+                  onPreview={previewGeometry}
+                  onCommit={commitGeometry}
+                  onDone={toggleCrop}
+                />
+              ) : undefined
+            }
           />
         )}
       </div>

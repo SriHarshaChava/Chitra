@@ -12,9 +12,11 @@ interface InfoPanelProps {
   info?: PhotoInfo;
   fileName?: string;
   fileSize?: number;
+  /** Size after cropping, if the photo is cropped. */
+  cropSize?: { width: number; height: number };
 }
 
-export function InfoPanel({ info, fileName, fileSize }: InfoPanelProps) {
+export function InfoPanel({ info, fileName, fileSize, cropSize }: InfoPanelProps) {
   if (!fileName) return <p className="panel-note">Open a photo to see its details.</p>;
 
   const exposure = [
@@ -38,6 +40,7 @@ export function InfoPanel({ info, fileName, fileSize }: InfoPanelProps) {
       info?.takenAt?.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
     ],
     ['Size', info?.width && info?.height ? formatMegapixels(info.width, info.height) : undefined],
+    ['Cropped', cropSize ? formatMegapixels(cropSize.width, cropSize.height) : undefined],
     ['File size', fileSize ? formatFileSize(fileSize) : undefined],
   ];
 

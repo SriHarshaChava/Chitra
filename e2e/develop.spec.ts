@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import UTIF from 'utif';
 import { decodeSrgb, rec2020From, rec2020To, transform } from '../src/color/colorSpaces';
 import { developParams, developPixel } from '../src/develop/developMath';
-import { DEFAULT_RECIPE, type Recipe } from '../src/develop/recipe';
+import { ALL_SLIDERS, DEFAULT_RECIPE, type Recipe } from '../src/develop/recipe';
 import { centerPixel, setSlider } from './helpers';
 
 /** A uniform-colour TIFF, so every pixel has the same known value. */
@@ -53,9 +53,8 @@ test('the GPU shader matches the reference develop maths', async ({ page }) => {
     vibrance: 30,
     saturation: -20,
   };
-  for (const [key, value] of Object.entries(recipe)) {
-    if (key === 'version') continue;
-    await setSlider(page.locator(`#slider-${key}`), value as number);
+  for (const { key } of ALL_SLIDERS) {
+    await setSlider(page.locator(`#slider-${key}`), recipe[key]);
   }
 
   const want = expected(colour, recipe);

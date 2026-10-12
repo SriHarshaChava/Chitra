@@ -79,10 +79,10 @@ Each phase ends with something usable on both Windows and iPad.
 | 0   | Foundations ✅    | Project setup, editor layout, system check, debug console, CI, GitHub Pages deployment                                                                                   |
 | 1   | RAW viewer ✅     | LibRaw WASM in a Worker, instant embedded preview, zoom/pan, histogram, EXIF panel, JPEG/PNG/TIFF                                                                        |
 | 2a  | Basic editing ✅  | GPU develop pipeline, white balance, exposure, contrast, highlights/shadows, whites/blacks, vibrance/saturation, undo/redo, before/after, edits remembered on the device |
-| 2b  | Crop and curve    | Crop/rotate/straighten, tone curve                                                                                                                                       |
-| 2c  | Export            | Export JPEG and 16-bit TIFF, full resolution, with colour profile                                                                                                        |
+| 2b  | Crop ✅           | Crop with aspect ratios, straighten (auto-trims corners), rotate 90°, flip                                                                                               |
+| 2c  | Export            | Export JPEG and 16-bit TIFF at full or reduced size (long edge, megapixels, %), with colour profile                                                                      |
 | 3   | Library           | Import, SQLite catalog, thumbnails, ratings/flags/colours, filters, keywords, presets, copy/paste settings, batch export, catalog backup/restore                         |
-| 4   | Detail and colour | Sharpening, noise reduction, HSL/colour mixer, colour grading, lens corrections, auto white balance and tone                                                             |
+| 4   | Detail and colour | Tone curve, sharpening, noise reduction, HSL/colour mixer, colour grading, lens corrections, auto white balance and tone                                                 |
 | 5   | Local adjustments | Brush, linear and radial gradients, mask combining; later AI subject/sky masks on-device                                                                                 |
 | 6   | Video v1          | Import Nikon MP4/MOV, playback, trim/split, single-track timeline, shared colour pipeline, MP4 export                                                                    |
 | 7   | Advanced          | Spot heal/clone, AI denoise, HDR/panorama merge, layers, DCP camera profiles, more RAW formats                                                                           |

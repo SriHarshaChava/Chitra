@@ -4,7 +4,7 @@
  * While a slider is being dragged the photo updates live (`preview`), but only the
  * final value is recorded (`commit`), so one drag is one undo step.
  */
-import type { Recipe } from './recipe';
+import { sameRecipe, type Recipe } from './recipe';
 
 /** Plenty for an editing session, while keeping memory use trivial. */
 export const MAX_HISTORY = 200;
@@ -47,7 +47,3 @@ export function redo(history: History): History {
 
 export const canUndo = (h: History) => h.index > 0;
 export const canRedo = (h: History) => h.index < h.past.length - 1;
-
-function sameRecipe(a: Recipe, b: Recipe): boolean {
-  return (Object.keys(a) as (keyof Recipe)[]).every((key) => a[key] === b[key]);
-}
