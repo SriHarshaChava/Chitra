@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Ref,
+} from 'react';
 import type { Matrix3 } from '../color/colorSpaces';
 import { formatFileSize } from '../decode/photoInfo';
 import {
@@ -27,7 +35,15 @@ import {
   type Size,
   type View,
 } from '../render/viewTransform';
+import { runExport, type ExportJob, type ExportResult } from '../export/runExport';
 import { CropOverlay } from './CropOverlay';
+
+/** Lets the export dialog render the photo with the viewer's GPU renderer. */
+export interface Exporter {
+  exportPhoto(
+    job: Pick<ExportJob, 'geometry' | 'develop' | 'settings' | 'onProgress'>,
+  ): Promise<ExportResult>;
+}
 
 interface ViewerProps {
   current: CurrentPhoto | null;
@@ -46,6 +62,7 @@ interface ViewerProps {
   onToggleCrop: () => void;
   /** Whether the crop tool can be used right now. */
   canCrop: boolean;
+  exporterRef?: Ref<Exporter>;
   onOpenFiles: () => void;
   onHistogram: (histogram: Histogram | undefined) => void;
   /** The GPU was reset (e.g. iPad backgrounding); the photo must be decoded again. */
@@ -113,6 +130,7 @@ export function Viewer({
   onGeometryCommit,
   onToggleCrop,
   canCrop,
+  exporterRef,
   onOpenFiles,
   onHistogram,
   onGpuReset,
@@ -148,6 +166,19 @@ export function Viewer({
   useEffect(() => {
     callbacks.current = { onHistogram, onGpuReset };
   });
+
+  useImperativeHandle(
+    exporterRef,
+    () => ({
+      async exportPhoto(job) {
+        const renderer = rendererRef.current;
+        const shown = gpuRef.current;
+        if (!renderer || !shown) throw new Error('No photo is loaded.');
+        return runExport({ ...job, renderer, gpu: shown.gpu, layout: shown.source });
+      },
+    }),
+    [],
+  );
 
   // The renderer is created as soon as the canvas exists.
   const attachCanvas = useCallback((canvas: HTMLCanvasElement | null) => {

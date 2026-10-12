@@ -4,6 +4,8 @@ interface TopBarProps {
   onToggleLibrary: () => void;
   onToggleDevelop: () => void;
   onOpenDiagnostics: () => void;
+  onExport: () => void;
+  canExport: boolean;
 }
 
 export function TopBar({
@@ -12,6 +14,8 @@ export function TopBar({
   onToggleLibrary,
   onToggleDevelop,
   onOpenDiagnostics,
+  onExport,
+  canExport,
 }: TopBarProps) {
   return (
     <header className="top-bar">
@@ -38,8 +42,17 @@ export function TopBar({
       </nav>
 
       <div className="top-bar-group">
-        <button type="button" className="button" onClick={onOpenDiagnostics}>
+        <button type="button" className="button top-bar-secondary" onClick={onOpenDiagnostics}>
           System check
+        </button>
+        <button
+          type="button"
+          className="button button-primary"
+          onClick={onExport}
+          disabled={!canExport}
+          title="Save the edited photo as JPEG or TIFF (Ctrl/⌘ E)"
+        >
+          Export…
         </button>
         <button
           type="button"

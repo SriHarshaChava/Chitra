@@ -7,6 +7,8 @@ import { TopBar } from './components/TopBar';
 import { Viewer } from './components/Viewer';
 import { ACCEPTED_FILE_TYPES } from './decode/fileTypes';
 import { CropPanel } from './components/CropPanel';
+import { ExportDialog } from './components/ExportDialog';
+import type { Exporter } from './components/Viewer';
 import { developParams } from './develop/developMath';
 import { cropPixelSize, frameSize, isDefaultGeometry, type Geometry } from './develop/geometry';
 import { DEFAULT_RECIPE } from './develop/recipe';
@@ -34,6 +36,8 @@ export function App({ detectCapabilities }: AppProps) {
   const closeDiagnostics = useCallback(() => setShowDiagnostics(false), []);
   const [showingBefore, setShowingBefore] = useState(false);
   const [cropRequested, setCropRequested] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const exporterRef = useRef<Exporter>(null);
   const [histogram, setHistogram] = useState<Histogram>();
   const fileInput = useRef<HTMLInputElement>(null);
   const session = usePhotoSession();
@@ -77,6 +81,12 @@ export function App({ detectCapabilities }: AppProps) {
   const toggleCrop = useCallback(() => setCropRequested((v) => !v), []);
 
   const openFiles = useCallback(() => fileInput.current?.click(), []);
+  const closeExport = useCallback(() => setShowExport(false), []);
+  // Export always uses the real edits (not the "Before" view).
+  const exportDevelop = useMemo(
+    () => (source ? developParams(develop.recipe, baseContrast) : null),
+    [source, develop.recipe, baseContrast],
+  );
   const toggleBefore = useCallback(() => setShowingBefore((v) => !v), []);
 
   // Keyboard shortcuts.
@@ -90,6 +100,11 @@ export function App({ detectCapabilities }: AppProps) {
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
+        return;
+      }
+      if (command && editable && event.key.toLowerCase() === 'e') {
+        event.preventDefault();
+        setShowExport(true);
         return;
       }
       if (command && editable && event.key.toLowerCase() === 'y') {
@@ -145,6 +160,8 @@ export function App({ detectCapabilities }: AppProps) {
         onToggleLibrary={() => setShowLibrary((v) => !v)}
         onToggleDevelop={() => setShowDevelop((v) => !v)}
         onOpenDiagnostics={() => setShowDiagnostics(true)}
+        onExport={() => setShowExport(true)}
+        canExport={editable}
       />
       <div className={layoutClass}>
         {showLibrary && (
@@ -168,6 +185,7 @@ export function App({ detectCapabilities }: AppProps) {
           onGeometryCommit={commitGeometry}
           onToggleCrop={toggleCrop}
           canCrop={editable}
+          exporterRef={exporterRef}
           onOpenFiles={openFiles}
           onHistogram={setHistogram}
           onGpuReset={session.reload}
@@ -212,6 +230,18 @@ export function App({ detectCapabilities }: AppProps) {
       />
 
       {dragging && <div className="drop-hint">Drop photos to open them</div>}
+      {showExport && editable && file && frame && (
+        <ExportDialog
+          fileName={file.name}
+          fullSize={cropPixelSize(frame, geometry.crop)}
+          onClose={closeExport}
+          onExport={(settings, onProgress) => {
+            const exporter = exporterRef.current;
+            if (!exporter) return Promise.reject(new Error('The viewer is not ready.'));
+            return exporter.exportPhoto({ geometry, develop: exportDevelop, settings, onProgress });
+          }}
+        />
+      )}
       {showDiagnostics && (
         <DiagnosticsPanel onClose={closeDiagnostics} detect={detectCapabilities} />
       )}

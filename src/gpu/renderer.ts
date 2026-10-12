@@ -44,6 +44,12 @@ export interface GpuImage {
   overview: { texture: WebGLTexture; width: number; height: number };
 }
 
+export interface ExportTarget {
+  size: number;
+  texture: WebGLTexture;
+  framebuffer: WebGLFramebuffer;
+}
+
 /** `null` shows the image unedited (camera previews). */
 export type RenderSettings = DevelopParams | null;
 
@@ -73,7 +79,8 @@ type UniformName =
   | 'u_highlights'
   | 'u_contrast'
   | 'u_baseContrast'
-  | 'u_output';
+  | 'u_output'
+  | 'u_encode';
 
 export class DevelopRenderer {
   readonly gl: WebGL2RenderingContext;
@@ -114,6 +121,7 @@ export class DevelopRenderer {
       'u_contrast',
       'u_baseContrast',
       'u_output',
+      'u_encode',
     ];
     this.uniforms = Object.fromEntries(
       names.map((name) => [name, gl.getUniformLocation(this.program, name)]),
@@ -257,7 +265,80 @@ export class DevelopRenderer {
     return computeHistogram(pixels);
   }
 
-  private useProgram(image: GpuImage, toClip: Matrix3, settings: RenderSettings) {
+  /** True if full-precision (32-bit float) export is possible on this GPU. */
+  canExportFloat(): boolean {
+    return Boolean(this.gl.getExtension('EXT_color_buffer_float'));
+  }
+
+  /** Creates an off-screen 32-bit float target for exporting `size`-sized chunks. */
+  createExportTarget(size: number): ExportTarget {
+    const gl = this.gl;
+    if (!this.canExportFloat()) throw new Error('This GPU cannot export at full precision.');
+    const texture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, size, size);
+    const framebuffer = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { size, texture, framebuffer };
+  }
+
+  disposeExportTarget(target: ExportTarget) {
+    this.gl.deleteFramebuffer(target.framebuffer);
+    this.gl.deleteTexture(target.texture);
+  }
+
+  /**
+   * Develops one rectangle of the final (cropped) photo at full resolution and returns
+   * linear RGB in the export colour space (RGBA floats, rows from the top).
+   */
+  renderExportChunk(
+    image: GpuImage,
+    imageToCrop: Matrix3,
+    region: Rect,
+    settings: RenderSettings,
+    outputMatrix: Matrix3,
+    target: ExportTarget,
+  ): Float32Array {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+    gl.viewport(0, 0, region.width, region.height);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // Crop pixels inside `region` → clip space (row 0 of the readback is the region's top).
+    const regionToClip: Matrix3 = [
+      2 / region.width,
+      0,
+      -1 - (2 * region.x) / region.width,
+      0,
+      2 / region.height,
+      -1 - (2 * region.y) / region.height,
+      0,
+      0,
+      1,
+    ];
+    const toClip = multiply(regionToClip, imageToCrop);
+    this.useProgram(image, toClip, settings, outputMatrix, false);
+    for (const tile of image.tiles) {
+      if (!isVisible(tile.core, toClip)) continue;
+      this.drawRect(tile.texture, tile.core, tile.padded, gl.LINEAR);
+    }
+    const pixels = new Float32Array(region.width * region.height * 4);
+    gl.readPixels(0, 0, region.width, region.height, gl.RGBA, gl.FLOAT, pixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return pixels;
+  }
+
+  private useProgram(
+    image: GpuImage,
+    toClip: Matrix3,
+    settings: RenderSettings,
+    outputMatrix: Matrix3 = this.outputMatrix,
+    encode = true,
+  ) {
     const gl = this.gl;
     const u = this.uniforms;
     gl.useProgram(this.program);
@@ -271,7 +352,8 @@ export class DevelopRenderer {
       true,
       image.kind === 'linear' ? IDENTITY : this.srgbToRec2020,
     );
-    gl.uniformMatrix3fv(u.u_output, true, this.outputMatrix);
+    gl.uniformMatrix3fv(u.u_output, true, outputMatrix);
+    gl.uniform1i(u.u_encode, encode ? 1 : 0);
     gl.uniform1i(u.u_develop, settings ? 1 : 0);
     if (settings) {
       gl.uniformMatrix3fv(u.u_input, true, settings.inputMatrix);
