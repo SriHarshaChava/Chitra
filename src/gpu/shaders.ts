@@ -35,7 +35,8 @@ uniform float u_shadows;
 uniform float u_highlights;
 uniform float u_contrast;
 uniform float u_baseContrast;
-uniform mat3 u_output;          // linear Rec.2020 -> linear display RGB
+uniform mat3 u_output;          // linear Rec.2020 -> linear display (or export) RGB
+uniform bool u_encode;          // false: output linear light (used for export)
 out vec4 outColor;
 
 float encodeSrgb(float x) {
@@ -102,6 +103,10 @@ void main() {
   }
 
   vec3 display = u_output * c;
-  outColor = vec4(encodeSrgb(display.r), encodeSrgb(display.g), encodeSrgb(display.b), 1.0);
+  if (u_encode) {
+    outColor = vec4(encodeSrgb(display.r), encodeSrgb(display.g), encodeSrgb(display.b), 1.0);
+  } else {
+    outColor = vec4(clamp(display, 0.0, 1.0), 1.0);
+  }
 }
 `;

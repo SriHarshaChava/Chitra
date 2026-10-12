@@ -53,6 +53,12 @@ export const PRIMARIES = {
     blue: { x: 0.15, y: 0.06 },
     white: D65,
   },
+  'adobe-rgb': {
+    red: { x: 0.64, y: 0.33 },
+    green: { x: 0.21, y: 0.71 },
+    blue: { x: 0.15, y: 0.06 },
+    white: D65,
+  },
   rec2020: {
     red: { x: 0.708, y: 0.292 },
     green: { x: 0.17, y: 0.797 },
@@ -116,8 +122,8 @@ export function rgbToXyzMatrix(p: RgbPrimaries): Matrix3 {
   return [rX * s0, gX * s1, bX * s2, rY * s0, gY * s1, bY * s2, rZ * s0, gZ * s1, bZ * s2];
 }
 
-/** Matrix converting linear Rec.2020 RGB to linear RGB of the given display space. */
-export function rec2020To(target: DisplayColorSpace): Matrix3 {
+/** Matrix converting linear Rec.2020 RGB to linear RGB of the given space. */
+export function rec2020To(target: DisplayColorSpace | 'adobe-rgb'): Matrix3 {
   return multiply(invert(rgbToXyzMatrix(PRIMARIES[target])), rgbToXyzMatrix(PRIMARIES.rec2020));
 }
 

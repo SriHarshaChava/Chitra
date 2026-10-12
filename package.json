@@ -25,6 +25,7 @@
   "dependencies": {
     "eruda": "^3.4.3",
     "exifr": "^7.1.3",
+    "jpeg-js": "0.4.4",
     "libraw-wasm": "1.6.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

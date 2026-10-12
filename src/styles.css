@@ -918,3 +918,94 @@ p {
   color: var(--text);
   font: inherit;
 }
+
+/* ---------- Export dialog ---------- */
+
+.export-group {
+  margin: 0;
+  padding: 12px 0 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.export-group legend {
+  padding: 0 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.export-group select {
+  min-height: 40px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+.segmented {
+  display: flex;
+  gap: 4px;
+}
+
+.segment {
+  flex: 1;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.segment-on {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.number-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.number-field input {
+  width: 110px;
+  min-height: 40px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+.progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+
+.export-done {
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .top-bar-secondary {
+    display: none;
+  }
+}
