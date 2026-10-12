@@ -1,5 +1,6 @@
 /**
- * The right-hand panel: histogram, photo info, and the Basic adjustments.
+ * The right-hand panel: histogram, photo info, and the adjustments (Basic, Tone
+ * curve, Colour mixer, Colour grading), each in a section that can be folded away.
  *
  * Dragging a slider updates the photo live; releasing it records one undo step.
  * Double-click (or double-tap) a slider's name to reset just that slider.
@@ -10,12 +11,19 @@ import {
   DEFAULT_RECIPE,
   isDefaultRecipe,
   SLIDER_SECTIONS,
+  type AdjustmentKey,
   type Recipe,
-  type SliderSpec,
 } from '../develop/recipe';
+import { SETTINGS_GROUPS, type SettingsGroup } from '../develop/settingsGroups';
+import { isLinearCurve, LINEAR_CURVE } from '../develop/toneCurve';
 import type { Histogram } from '../render/histogram';
+import { CollapsibleSection } from './CollapsibleSection';
+import { ColorGrading } from './ColorGrading';
+import { ColorMixer } from './ColorMixer';
 import { HistogramView } from './HistogramView';
 import { InfoPanel } from './InfoPanel';
+import { Slider } from './Slider';
+import { ToneCurveEditor } from './ToneCurveEditor';
 
 export interface DevelopControls {
   recipe: Recipe;
@@ -121,70 +129,91 @@ export function DevelopPanel({
 
       {cropPanel}
       {!cropPanel && presets}
-      {!cropPanel &&
-        SLIDER_SECTIONS.map((section) => (
-          <section key={section.title} className="panel-section">
-            <h3 className="section-title">{section.title}</h3>
-            {section.sliders.map((spec) => (
-              <Slider
-                key={spec.key}
-                spec={spec}
-                recipe={develop.recipe}
-                disabled={disabled}
-                onPreview={develop.preview}
-                onCommit={develop.commit}
-              />
-            ))}
-          </section>
-        ))}
+      {!cropPanel && <Adjustments develop={develop} disabled={disabled} />}
     </aside>
   );
 }
 
-interface SliderProps {
-  spec: SliderSpec;
-  recipe: Recipe;
-  disabled: boolean;
-  onPreview: (recipe: Recipe) => void;
-  onCommit: (recipe: Recipe) => void;
-}
+const groupKeys = (id: SettingsGroup): AdjustmentKey[] =>
+  SETTINGS_GROUPS.find((g) => g.id === id)!.keys;
 
-function Slider({ spec, recipe, disabled, onPreview, onCommit }: SliderProps) {
-  const value = recipe[spec.key];
-  const id = `slider-${spec.key}`;
-  // By the time the pointer or key is released, React has re-rendered with the
-  // dragged value, so `recipe` is exactly what is on screen.
-  const commitLatest = () => onCommit(recipe);
-  const resetThis = () => onCommit({ ...recipe, [spec.key]: DEFAULT_RECIPE[spec.key] });
+function Adjustments({ develop, disabled }: { develop: DevelopControls; disabled: boolean }) {
+  const { recipe, preview, commit } = develop;
+  const sliderProps = { recipe, disabled, onPreview: preview, onCommit: commit };
+  const changed = (keys: AdjustmentKey[]) => keys.some((k) => recipe[k] !== DEFAULT_RECIPE[k]);
+  /** Resets one section's sliders. */
+  const resetButton = (label: string, keys: AdjustmentKey[]) => (
+    <button
+      type="button"
+      className="small-button"
+      disabled={disabled || !changed(keys)}
+      onClick={() =>
+        commit({ ...recipe, ...Object.fromEntries(keys.map((k) => [k, DEFAULT_RECIPE[k]])) })
+      }
+      aria-label={`Reset ${label}`}
+    >
+      Reset
+    </button>
+  );
+  const basicKeys = SLIDER_SECTIONS.flatMap((s) => s.sliders.map((spec) => spec.key));
+  const mixerKeys = groupKeys('colorMixer');
+  const gradingKeys = groupKeys('colorGrading');
+  const curveChanged = !isLinearCurve(recipe.toneCurve);
 
   return (
-    <div className={`slider${value !== DEFAULT_RECIPE[spec.key] ? ' slider-changed' : ''}`}>
-      <label
-        htmlFor={id}
-        className="slider-label"
-        onDoubleClick={disabled ? undefined : resetThis}
-        title="Double-click to reset"
+    <>
+      <CollapsibleSection id="basic" title="Basic" defaultOpen changed={changed(basicKeys)}>
+        {SLIDER_SECTIONS.map((section) => (
+          <div key={section.title} className="slider-group">
+            <h4 className="slider-group-title">{section.title}</h4>
+            {section.sliders.map((spec) => (
+              <Slider key={spec.key} spec={spec} {...sliderProps} />
+            ))}
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        id="toneCurve"
+        title="Tone curve"
+        changed={curveChanged}
+        actions={
+          <button
+            type="button"
+            className="small-button"
+            disabled={disabled || !curveChanged}
+            onClick={() => commit({ ...recipe, toneCurve: LINEAR_CURVE })}
+            aria-label="Reset Tone curve"
+          >
+            Reset
+          </button>
+        }
       >
-        {spec.label}
-      </label>
-      <output htmlFor={id} className="slider-value">
-        {spec.format(value)}
-      </output>
-      <input
-        id={id}
-        type="range"
-        min={spec.min}
-        max={spec.max}
-        step={spec.step}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => {
-          onPreview({ ...recipe, [spec.key]: Number(event.target.value) });
-        }}
-        onPointerUp={commitLatest}
-        onKeyUp={commitLatest}
-        onBlur={commitLatest}
-      />
-    </div>
+        <ToneCurveEditor
+          curve={recipe.toneCurve}
+          disabled={disabled}
+          onPreview={(toneCurve) => preview({ ...recipe, toneCurve })}
+          onCommit={(toneCurve) => commit({ ...recipe, toneCurve })}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        id="colorMixer"
+        title="Colour mixer"
+        changed={changed(mixerKeys)}
+        actions={resetButton('Colour mixer', mixerKeys)}
+      >
+        <ColorMixer {...sliderProps} />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        id="colorGrading"
+        title="Colour grading"
+        changed={changed(gradingKeys)}
+        actions={resetButton('Colour grading', gradingKeys)}
+      >
+        <ColorGrading {...sliderProps} />
+      </CollapsibleSection>
+    </>
   );
 }

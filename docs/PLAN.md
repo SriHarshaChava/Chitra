@@ -66,7 +66,7 @@ Everything is free.
 | Tests              | Vitest, Testing Library, Playwright                      | MIT / MIT / Apache-2.0                      |
 | CI and hosting     | GitHub Actions, GitHub Pages                             | Free for public repositories                |
 
-Full list: [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). How RAW decoding works: [decisions/0002-raw-pipeline.md](decisions/0002-raw-pipeline.md). How editing works: [decisions/0003-gpu-develop-pipeline.md](decisions/0003-gpu-develop-pipeline.md). How the library is stored: [decisions/0004-catalog.md](decisions/0004-catalog.md).
+Full list: [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). How RAW decoding works: [decisions/0002-raw-pipeline.md](decisions/0002-raw-pipeline.md). How editing works: [decisions/0003-gpu-develop-pipeline.md](decisions/0003-gpu-develop-pipeline.md). How the library is stored: [decisions/0004-catalog.md](decisions/0004-catalog.md). How the colour tools work: [decisions/0005-colour-tools.md](decisions/0005-colour-tools.md).
 
 **Licence rule:** Chitra is MIT-licensed. darktable and RawTherapee are GPL. We may learn from their published algorithms but must not copy their code.
 
@@ -83,7 +83,9 @@ Each phase ends with something usable on both Windows and iPad.
 | 2c  | Export ✅         | Export JPEG and 16-bit TIFF at full or reduced size (long edge, megapixels, %), with colour profile                                                                      |
 | 3a  | Library ✅        | Catalog in IndexedDB (originals copied), grid view, ratings/flags/colour labels, keywords, filters and sorting, thumbnails that show edits                               |
 | 3b  | Library tools ✅  | Copy/paste settings, presets, batch export, catalog backup/restore                                                                                                       |
-| 4   | Detail and colour | Tone curve, sharpening, noise reduction, HSL/colour mixer, colour grading, lens corrections, auto white balance and tone                                                 |
+| 4a  | Colour ✅         | Tone curve, colour mixer (HSL), colour grading, collapsible Develop sections                                                                                             |
+| 4b  | Detail            | Sharpening, noise reduction                                                                                                                                              |
+| 4c  | Corrections       | Lens corrections, auto white balance and tone                                                                                                                            |
 | 5   | Local adjustments | Brush, linear and radial gradients, mask combining; later AI subject/sky masks on-device                                                                                 |
 | 6   | Video v1          | Import Nikon MP4/MOV, playback, trim/split, single-track timeline, shared colour pipeline, MP4 export                                                                    |
 | 7   | Advanced          | Spot heal/clone, AI denoise, HDR/panorama merge, layers, DCP camera profiles, more RAW formats                                                                           |

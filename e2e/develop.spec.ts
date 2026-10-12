@@ -2,7 +2,13 @@ import { expect, test } from '@playwright/test';
 import UTIF from 'utif';
 import { decodeSrgb, rec2020From, rec2020To, transform } from '../src/color/colorSpaces';
 import { developParams, developPixel } from '../src/develop/developMath';
-import { ALL_SLIDERS, DEFAULT_RECIPE, type Recipe } from '../src/develop/recipe';
+import {
+  DEFAULT_RECIPE,
+  SLIDER_SECTIONS,
+  type AdjustmentKey,
+  type Recipe,
+} from '../src/develop/recipe';
+import { CURVE_PRESETS } from '../src/develop/toneCurve';
 import { centerPixel, setSlider, importAndOpen } from './helpers';
 
 /** A uniform-colour TIFF, so every pixel has the same known value. */
@@ -53,10 +59,17 @@ test('the GPU shader matches the reference develop maths', async ({ page }) => {
     vibrance: 30,
     saturation: -20,
   };
-  for (const { key } of ALL_SLIDERS) {
+  for (const { key } of SLIDER_SECTIONS.flatMap((s) => s.sliders)) {
     await setSlider(page.locator(`#slider-${key}`), recipe[key]);
   }
+  await expectReference(page, colour, recipe);
+});
 
+async function expectReference(
+  page: import('@playwright/test').Page,
+  colour: [number, number, number],
+  recipe: Recipe,
+) {
   const want = expected(colour, recipe);
   await expect
     .poll(async () => {
@@ -64,6 +77,56 @@ test('the GPU shader matches the reference develop maths', async ({ page }) => {
       return Math.max(...want.map((v, i) => Math.abs(v - got[i]!)));
     })
     .toBeLessThanOrEqual(2);
+}
+
+test('tone curve, colour mixer and colour grading match the reference maths', async ({ page }) => {
+  const colour: [number, number, number] = [190, 110, 70];
+  await openTiff(page, colour);
+  const open = (title: string) => page.getByRole('button', { name: title, exact: true }).click();
+
+  // Tone curve: a preset button.
+  await open('Tone curve');
+  await page.getByRole('button', { name: 'Strong contrast' }).click();
+  let recipe: Recipe = { ...DEFAULT_RECIPE, toneCurve: CURVE_PRESETS[2]!.points };
+  await expectReference(page, colour, recipe);
+
+  // Colour mixer: this patch is orange.
+  await open('Colour mixer');
+  const mixer: Partial<Record<AdjustmentKey, number>> = {
+    saturationOrange: 15,
+    saturationRed: -20,
+  };
+  for (const [key, value] of Object.entries(mixer)) {
+    await setSlider(page.locator(`#slider-${key}`), value);
+  }
+  await page.getByRole('tab', { name: 'Hue' }).click();
+  await setSlider(page.locator('#slider-hueOrange'), 30);
+  await page.getByRole('tab', { name: 'Luminance' }).click();
+  await setSlider(page.locator('#slider-luminanceOrange'), -25);
+  recipe = { ...recipe, ...mixer, hueOrange: 30, luminanceOrange: -25 };
+  await expectReference(page, colour, recipe);
+
+  // Colour grading.
+  await open('Colour grading');
+  const grading: Partial<Record<AdjustmentKey, number>> = {
+    gradeShadowsHue: 220,
+    gradeShadowsSaturation: 60,
+    gradeMidtonesHue: 200,
+    gradeMidtonesSaturation: 50,
+    gradeHighlightsHue: 60,
+    gradeHighlightsSaturation: 70,
+    gradeBalance: -20,
+    gradeBlending: 70,
+  };
+  for (const [key, value] of Object.entries(grading)) {
+    await setSlider(page.locator(`#slider-${key}`), value);
+  }
+  recipe = { ...recipe, ...grading };
+  await expectReference(page, colour, recipe);
+
+  // Each step visibly changes this colour (so the comparisons above mean something):
+  // [190,110,70] → curve [213,100,44] → mixer [196,86,14] → grading [186,96,12].
+  expect(expected(colour, recipe)).toEqual([186, 96, 12]);
 });
 
 test('undo, redo, reset and before/after', async ({ page }) => {
@@ -93,4 +156,39 @@ test('undo, redo, reset and before/after', async ({ page }) => {
   await page.getByRole('button', { name: 'Reset', exact: true }).click();
   await expect(page.locator('output[for=slider-contrast]')).toHaveText('0');
   await expect.poll(() => centerPixel(page)).toEqual(original);
+});
+
+test('tone curve editor: tap to add a point, drag it, double-tap to remove it', async ({
+  page,
+}) => {
+  await openTiff(page, [128, 128, 128]);
+  const original = (await centerPixel(page))[0]!;
+  await page.getByRole('button', { name: 'Tone curve', exact: true }).click();
+  const graph = page.getByRole('img', { name: /Tone curve/ });
+  await graph.scrollIntoViewIfNeeded();
+  const box = (await graph.boundingBox())!;
+  // Curve coordinates (0…1, y up) → screen position; the graph has a 4 % margin.
+  const at = (x: number, y: number) => ({
+    x: box.x + ((x + 0.04) / 1.08) * box.width,
+    y: box.y + ((1 - y + 0.04) / 1.08) * box.height,
+  });
+
+  // Tap on the line at mid-grey, then drag the new point up: the photo brightens.
+  const start = at(0.5, 0.5);
+  const end = at(0.5, 0.7);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await centerPixel(page))[0]).toBeGreaterThan(original + 25);
+  await expect(page.locator('.tone-curve-point')).toHaveCount(3);
+
+  // Double-click the point to remove it again.
+  await page.mouse.dblclick(end.x, end.y);
+  await expect(page.locator('.tone-curve-point')).toHaveCount(2);
+  await expect.poll(async () => (await centerPixel(page))[0]).toBe(original);
+
+  // Undo brings the point back.
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.locator('.tone-curve-point')).toHaveCount(3);
 });

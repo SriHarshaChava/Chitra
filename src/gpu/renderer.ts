@@ -12,6 +12,7 @@ import {
   type DisplayColorSpace,
   type Matrix3,
 } from '../color/colorSpaces';
+import { LAB_TO_LMS, LMS_TO_LAB, LMS_TO_REC2020, REC2020_TO_LMS } from '../color/oklab';
 import type { DevelopParams } from '../develop/developMath';
 import { computeHistogram, type Histogram } from '../render/histogram';
 import type { Rotation, SourceImage } from '../render/sourceImage';
@@ -79,6 +80,22 @@ type UniformName =
   | 'u_highlights'
   | 'u_contrast'
   | 'u_baseContrast'
+  | 'u_curveOn'
+  | 'u_curve'
+  | 'u_mixerOn'
+  | 'u_mixHue'
+  | 'u_mixSat'
+  | 'u_mixLum'
+  | 'u_gradingOn'
+  | 'u_gradeShadows'
+  | 'u_gradeMidtones'
+  | 'u_gradeHighlights'
+  | 'u_gradePivot'
+  | 'u_gradeWidth'
+  | 'u_toLms'
+  | 'u_lmsToLab'
+  | 'u_labToLms'
+  | 'u_fromLms'
   | 'u_output'
   | 'u_encode';
 
@@ -89,6 +106,9 @@ export class DevelopRenderer {
   private readonly uniforms: Record<UniformName, WebGLUniformLocation | null>;
   private readonly outputMatrix: Matrix3;
   private readonly srgbToRec2020 = rec2020From('srgb');
+  /** Tone curve lookup table on the GPU, and which table it holds. */
+  private readonly curveTexture: WebGLTexture;
+  private curveData: Float32Array | null = null;
 
   constructor(canvas: HTMLCanvasElement, displaySpace: DisplayColorSpace) {
     const gl = canvas.getContext('webgl2', {
@@ -120,12 +140,37 @@ export class DevelopRenderer {
       'u_highlights',
       'u_contrast',
       'u_baseContrast',
+      'u_curveOn',
+      'u_curve',
+      'u_mixerOn',
+      'u_mixHue',
+      'u_mixSat',
+      'u_mixLum',
+      'u_gradingOn',
+      'u_gradeShadows',
+      'u_gradeMidtones',
+      'u_gradeHighlights',
+      'u_gradePivot',
+      'u_gradeWidth',
+      'u_toLms',
+      'u_lmsToLab',
+      'u_labToLms',
+      'u_fromLms',
       'u_output',
       'u_encode',
     ];
     this.uniforms = Object.fromEntries(
       names.map((name) => [name, gl.getUniformLocation(this.program, name)]),
     ) as Record<UniformName, WebGLUniformLocation | null>;
+
+    this.curveTexture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, this.curveTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // Placeholder until a curve is set, so the texture is always complete.
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 1, 1, 0, gl.RED, gl.FLOAT, new Float32Array([0]));
 
     // One unit square (two triangles), reused for every tile.
     this.vao = gl.createVertexArray()!;
@@ -382,6 +427,55 @@ export class DevelopRenderer {
       gl.uniform1f(u.u_highlights, settings.highlights);
       gl.uniform1f(u.u_contrast, settings.contrast);
       gl.uniform1f(u.u_baseContrast, settings.baseContrast);
+      this.setColourUniforms(settings);
+    }
+    // Photo tiles are drawn with texture unit 0.
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  /** Tone curve, colour mixer and colour grading. */
+  private setColourUniforms(settings: DevelopParams) {
+    const gl = this.gl;
+    const u = this.uniforms;
+    gl.uniformMatrix3fv(u.u_toLms, true, REC2020_TO_LMS);
+    gl.uniformMatrix3fv(u.u_lmsToLab, true, LMS_TO_LAB);
+    gl.uniformMatrix3fv(u.u_labToLms, true, LAB_TO_LMS);
+    gl.uniformMatrix3fv(u.u_fromLms, true, LMS_TO_REC2020);
+
+    gl.uniform1i(u.u_curveOn, settings.curve ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.curveTexture);
+    gl.uniform1i(u.u_curve, 1);
+    if (settings.curve && settings.curve !== this.curveData) {
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.R32F,
+        settings.curve.length,
+        1,
+        0,
+        gl.RED,
+        gl.FLOAT,
+        settings.curve,
+      );
+      this.curveData = settings.curve;
+    }
+
+    const { mixer, grading } = settings;
+    gl.uniform1i(u.u_mixerOn, mixer ? 1 : 0);
+    if (mixer) {
+      gl.uniform1fv(u.u_mixHue, mixer.hue);
+      gl.uniform1fv(u.u_mixSat, mixer.saturation);
+      gl.uniform1fv(u.u_mixLum, mixer.luminance);
+    }
+    gl.uniform1i(u.u_gradingOn, grading ? 1 : 0);
+    if (grading) {
+      gl.uniform2fv(u.u_gradeShadows, grading.shadows);
+      gl.uniform2fv(u.u_gradeMidtones, grading.midtones);
+      gl.uniform2fv(u.u_gradeHighlights, grading.highlights);
+      gl.uniform1f(u.u_gradePivot, grading.pivot);
+      gl.uniform1f(u.u_gradeWidth, grading.width);
     }
   }
 
