@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { backupFileName, makeBackup, parseBackup, planRestore } from './catalog/backup';
 import { applyFilter, DEFAULT_FILTER, type LibraryFilter } from './catalog/filters';
-import { applyPreset, presetValues, type Preset } from './catalog/presets';
+import { applyPreset, presetSettings, type Preset } from './catalog/presets';
 import { COLOR_LABELS, type CatalogPhoto, type PhotoChanges } from './catalog/types';
 import { useCatalog } from './catalog/useCatalog';
 import { BASE_CONTRAST } from './color/colorSpaces';
@@ -328,7 +328,7 @@ export function App({ detectCapabilities }: AppProps) {
         id: crypto.randomUUID(),
         name,
         builtIn: false,
-        values: presetValues(recipe, groups),
+        ...presetSettings(recipe, groups),
         createdAt: Date.now(),
       });
       setGroupDialog(null);

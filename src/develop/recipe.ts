@@ -6,11 +6,30 @@
  */
 
 import { DEFAULT_GEOMETRY, isDefaultGeometry, sanitizeGeometry, type Geometry } from './geometry';
+import { BANDS, type Band } from './hsl';
+import { isLinearCurve, LINEAR_CURVE, sanitizeCurve, type ToneCurve } from './toneCurve';
 
-/** Version 2 added `geometry` (crop, straighten, rotate, flip). */
-export const RECIPE_VERSION = 2;
+/**
+ * Version 2 added `geometry` (crop, straighten, rotate, flip).
+ * Version 3 added the tone curve, colour mixer and colour grading.
+ */
+export const RECIPE_VERSION = 3;
 
-export interface Recipe {
+/** Colour mixer sliders, for example `hueBlue` or `luminanceOrange`. */
+export type MixerKey = `${'hue' | 'saturation' | 'luminance'}${Band}`;
+
+/** Colour grading sliders. Wheel hues are OKLCh angles in degrees. */
+export type GradingKey =
+  | 'gradeShadowsHue'
+  | 'gradeShadowsSaturation'
+  | 'gradeMidtonesHue'
+  | 'gradeMidtonesSaturation'
+  | 'gradeHighlightsHue'
+  | 'gradeHighlightsSaturation'
+  | 'gradeBalance'
+  | 'gradeBlending';
+
+export interface Recipe extends Record<MixerKey, number>, Record<GradingKey, number> {
   version: typeof RECIPE_VERSION;
   /** −100 (cooler/bluer) … +100 (warmer/yellower), relative to the camera's white balance. */
   temperature: number;
@@ -25,11 +44,17 @@ export interface Recipe {
   blacks: number;
   vibrance: number;
   saturation: number;
+  /** Points of the tone curve; a straight line changes nothing. */
+  toneCurve: ToneCurve;
   geometry: Geometry;
 }
 
 /** Keys of the numeric slider adjustments. */
-export type AdjustmentKey = Exclude<keyof Recipe, 'version' | 'geometry'>;
+export type AdjustmentKey = Exclude<keyof Recipe, 'version' | 'geometry' | 'toneCurve'>;
+
+const MIXER_DEFAULTS = Object.fromEntries(
+  (['hue', 'saturation', 'luminance'] as const).flatMap((p) => BANDS.map((b) => [`${p}${b}`, 0])),
+) as Record<MixerKey, number>;
 
 export const DEFAULT_RECIPE: Recipe = Object.freeze({
   version: RECIPE_VERSION,
@@ -43,6 +68,16 @@ export const DEFAULT_RECIPE: Recipe = Object.freeze({
   blacks: 0,
   vibrance: 0,
   saturation: 0,
+  ...MIXER_DEFAULTS,
+  gradeShadowsHue: 0,
+  gradeShadowsSaturation: 0,
+  gradeMidtonesHue: 0,
+  gradeMidtonesSaturation: 0,
+  gradeHighlightsHue: 0,
+  gradeHighlightsSaturation: 0,
+  gradeBalance: 0,
+  gradeBlending: 50,
+  toneCurve: LINEAR_CURVE,
   geometry: DEFAULT_GEOMETRY,
 });
 
@@ -62,6 +97,7 @@ export interface SliderSection {
 }
 
 const signed = (value: number) => (value > 0 ? `+${value}` : `${value}`);
+const degrees = (value: number) => `${value}°`;
 const signedEv = (value: number) => (value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2));
 
 const percentSlider = (key: AdjustmentKey, label: string): SliderSpec => ({
@@ -95,11 +131,74 @@ export const SLIDER_SECTIONS: SliderSection[] = [
   },
 ];
 
-export const ALL_SLIDERS: SliderSpec[] = SLIDER_SECTIONS.flatMap((s) => s.sliders);
+/** The colour mixer's three tabs, each with one slider per colour band. */
+export const MIXER_TABS: { id: 'hue' | 'saturation' | 'luminance'; label: string }[] = [
+  { id: 'hue', label: 'Hue' },
+  { id: 'saturation', label: 'Saturation' },
+  { id: 'luminance', label: 'Luminance' },
+];
+
+export const MIXER_SLIDERS: SliderSpec[] = MIXER_TABS.flatMap((tab) =>
+  BANDS.map((band) => percentSlider(`${tab.id}${band}`, band)),
+);
+
+const hueSlider = (key: GradingKey): SliderSpec => ({
+  key,
+  label: 'Hue',
+  min: 0,
+  max: 360,
+  step: 1,
+  format: degrees,
+});
+const amountSlider = (key: GradingKey): SliderSpec => ({
+  key,
+  label: 'Saturation',
+  min: 0,
+  max: 100,
+  step: 1,
+  format: String,
+});
+
+/** The three colour grading wheels. */
+export const GRADING_WHEELS: { id: string; label: string; hue: SliderSpec; amount: SliderSpec }[] =
+  [
+    {
+      id: 'shadows',
+      label: 'Shadows',
+      hue: hueSlider('gradeShadowsHue'),
+      amount: amountSlider('gradeShadowsSaturation'),
+    },
+    {
+      id: 'midtones',
+      label: 'Midtones',
+      hue: hueSlider('gradeMidtonesHue'),
+      amount: amountSlider('gradeMidtonesSaturation'),
+    },
+    {
+      id: 'highlights',
+      label: 'Highlights',
+      hue: hueSlider('gradeHighlightsHue'),
+      amount: amountSlider('gradeHighlightsSaturation'),
+    },
+  ];
+
+export const GRADING_SLIDERS: SliderSpec[] = [
+  percentSlider('gradeBalance', 'Balance'),
+  { key: 'gradeBlending', label: 'Blending', min: 0, max: 100, step: 1, format: String },
+];
+
+/** Every numeric adjustment. */
+export const ALL_SLIDERS: SliderSpec[] = [
+  ...SLIDER_SECTIONS.flatMap((s) => s.sliders),
+  ...MIXER_SLIDERS,
+  ...GRADING_WHEELS.flatMap((w) => [w.hue, w.amount]),
+  ...GRADING_SLIDERS,
+];
 
 export function isDefaultRecipe(recipe: Recipe): boolean {
   return (
     ALL_SLIDERS.every(({ key }) => recipe[key] === DEFAULT_RECIPE[key]) &&
+    isLinearCurve(recipe.toneCurve) &&
     isDefaultGeometry(recipe.geometry)
   );
 }
@@ -111,7 +210,8 @@ export function sameRecipe(a: Recipe, b: Recipe): boolean {
 /**
  * Turns untrusted data (e.g. from storage or an imported file) into a valid recipe:
  * unknown fields are dropped, missing or invalid values become defaults, and values
- * are clamped to each slider's range. Version 1 recipes (no geometry) still load.
+ * are clamped to each slider's range. Older recipes still load: settings they don't
+ * have (geometry in version 1; curve, mixer and grading in version 2) start at defaults.
  */
 export function sanitizeRecipe(data: unknown): Recipe {
   const source = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
@@ -122,6 +222,7 @@ export function sanitizeRecipe(data: unknown): Recipe {
       recipe[key] = Math.min(max, Math.max(min, value));
     }
   }
+  recipe.toneCurve = sanitizeCurve(source.toneCurve);
   recipe.geometry = sanitizeGeometry(source.geometry);
   return recipe;
 }

@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { requestPersistentStorage } from '../platform/storage';
+import { sanitizeRecipe } from '../develop/recipe';
 import * as db from './db';
 import { importFile } from './importPhotos';
 import { BUILT_IN_PRESETS, type Preset } from './presets';
@@ -56,7 +57,8 @@ export function useCatalog() {
     db.getAllPhotos()
       .then(async (all) => {
         if (cancelled) return;
-        replacePhotos(all);
+        // Recipes saved by older versions of Chitra are upgraded to the current one.
+        replacePhotos(all.map((p) => ({ ...p, recipe: sanitizeRecipe(p.recipe) })));
         for (const photo of all) {
           const blob = await db.getThumbnail(photo.id);
           if (cancelled) return;

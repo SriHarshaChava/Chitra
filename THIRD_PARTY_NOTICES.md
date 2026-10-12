@@ -16,6 +16,11 @@ bundle. Each keeps its own licence.
 | [React](https://react.dev/)                                                  | User interface                      | MIT                         | https://github.com/facebook/react                    |
 | [Eruda](https://github.com/liriliri/eruda)                                   | On-page debug console (`?debug=1`)  | MIT                         | https://github.com/liriliri/eruda                    |
 
+Published colour science used in Chitra's own code (formulas and constants only, no
+third-party code): the [OKLab colour space](https://bottosson.github.io/posts/oklab/) by
+Björn Ottosson (public domain / MIT), and the Fritsch–Carlson monotone cubic interpolation
+(1980) for the tone curve.
+
 LibRaw is used unmodified, as distributed by the `libraw-wasm` package. Its complete
 source code is available at the link above.
 

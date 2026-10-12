@@ -1,5 +1,6 @@
 /** Presets and copy/paste of settings, in the Develop panel. */
 import type { Preset } from '../catalog/presets';
+import { CollapsibleSection } from './CollapsibleSection';
 
 interface PresetsSectionProps {
   presets: Preset[];
@@ -23,8 +24,7 @@ export function PresetsSection({
   onPaste,
 }: PresetsSectionProps) {
   return (
-    <section className="panel-section" aria-label="Presets">
-      <h3 className="section-title">Presets</h3>
+    <CollapsibleSection id="presets" title="Presets" defaultOpen>
       <div className="crop-buttons">
         <button
           type="button"
@@ -72,6 +72,6 @@ export function PresetsSection({
           </li>
         ))}
       </ul>
-    </section>
+    </CollapsibleSection>
   );
 }

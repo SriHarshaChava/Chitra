@@ -5,15 +5,20 @@
  * This TypeScript version is the readable reference: unit tests check its behaviour,
  * and a browser test checks that the shader produces the same numbers.
  *
- * Order of operations (like Lightroom's Basic panel):
+ * Order of operations (like Lightroom):
  *   1. white balance + exposure      (linear light, one 3×3 matrix)
  *   2. vibrance + saturation         (linear light, brightness preserved)
- *   3. whites/blacks, highlights/shadows, contrast, base curve
+ *   3. colour mixer                  (OKLCh, per colour band)
+ *   4. whites/blacks, highlights/shadows, contrast, base curve, tone curve
  *                                    (perceptual scale, per channel)
- *   4. convert to the display's colours and encode
+ *   5. colour grading                (OKLab, by brightness)
+ *   6. convert to the display's colours and encode
  */
 import { decodeSrgb, encodeSrgb, transform, type Matrix3 } from '../color/colorSpaces';
+import { applyGrading, gradingParams, type GradingParams } from './grading';
+import { applyMixer, BANDS, HUE_RANGE, LUMINANCE_RANGE, type MixerParams } from './hsl';
 import type { Recipe } from './recipe';
+import { curveLut, isLinearCurve, lookupCurve } from './toneCurve';
 import { whiteBalanceMatrix } from './whiteBalance';
 
 /** Rec.2020 luminance weights (how bright each primary looks). */
@@ -46,6 +51,33 @@ export interface DevelopParams {
   contrast: number;
   /** Default S-curve strength: on for RAW, off for already-rendered JPEGs. */
   baseContrast: number;
+  /** Tone curve lookup table, or `null` for a straight line. */
+  curve: Float32Array | null;
+  /** Colour mixer, or `null` when all its sliders are at zero. */
+  mixer: MixerParams | null;
+  /** Colour grading, or `null` when all wheels are at zero. */
+  grading: GradingParams | null;
+}
+
+function mixerParams(recipe: Recipe): MixerParams | null {
+  const values = (property: 'hue' | 'saturation' | 'luminance', scale: number) =>
+    BANDS.map((band) => (recipe[`${property}${band}`] / 100) * scale);
+  const m = {
+    hue: values('hue', HUE_RANGE),
+    saturation: values('saturation', 1),
+    luminance: values('luminance', LUMINANCE_RANGE),
+  };
+  return [...m.hue, ...m.saturation, ...m.luminance].every((v) => v === 0) ? null : m;
+}
+
+function grading(recipe: Recipe): GradingParams | null {
+  const wheels = [
+    { hue: recipe.gradeShadowsHue, saturation: recipe.gradeShadowsSaturation },
+    { hue: recipe.gradeMidtonesHue, saturation: recipe.gradeMidtonesSaturation },
+    { hue: recipe.gradeHighlightsHue, saturation: recipe.gradeHighlightsSaturation },
+  ];
+  if (wheels.every((w) => w.saturation === 0)) return null;
+  return gradingParams(wheels, recipe.gradeBalance, recipe.gradeBlending);
 }
 
 export function developParams(recipe: Recipe, baseContrast: number): DevelopParams {
@@ -62,6 +94,9 @@ export function developParams(recipe: Recipe, baseContrast: number): DevelopPara
     highlights: (recipe.highlights / 100) * HIGHLIGHTS_RANGE,
     contrast: (recipe.contrast / 100) * CONTRAST_RANGE,
     baseContrast,
+    curve: isLinearCurve(recipe.toneCurve) ? null : curveLut(recipe.toneCurve),
+    mixer: mixerParams(recipe),
+    grading: grading(recipe),
   };
 }
 
@@ -93,6 +128,7 @@ export function toneChannel(v: number, p: DevelopParams): number {
   t += p.highlights * highlightWeight(t);
   t = sCurve(t, p.contrast);
   t = sCurve(t, p.baseContrast);
+  if (p.curve) t = lookupCurve(p.curve, t);
   return t;
 }
 
@@ -126,7 +162,15 @@ export function developPixel(
   const k = 1 + p.saturation + p.vibrance * (1 - currentSaturation);
   c = c.map((ch) => Math.max(0, luma + (ch - luma) * k)) as [number, number, number];
 
-  const toned = c.map((ch) => decodeExtended(Math.max(0, toneChannel(encodeExtended(ch), p))));
-  const display = transform(outputMatrix, toned as [number, number, number]);
+  if (p.mixer) c = applyMixer(c, p.mixer);
+
+  let toned = c.map((ch) => decodeExtended(Math.max(0, toneChannel(encodeExtended(ch), p)))) as [
+    number,
+    number,
+    number,
+  ];
+  if (p.grading) toned = applyGrading(toned, p.grading);
+
+  const display = transform(outputMatrix, toned);
   return display.map((ch) => encodeSrgb(ch)) as [number, number, number];
 }

@@ -6,7 +6,7 @@ import { applyGroups, DEFAULT_COPY_GROUPS } from '../develop/settingsGroups';
 import { crc32, makeZip, uniqueNames } from '../export/zip';
 import { backupFileName, makeBackup, parseBackup, planRestore } from './backup';
 import * as db from './db';
-import { applyPreset, BUILT_IN_PRESETS, presetValues, sanitizePreset } from './presets';
+import { applyPreset, BUILT_IN_PRESETS, presetSettings, sanitizePreset } from './presets';
 import type { CatalogPhoto } from './types';
 
 const recipe = (r: Partial<Recipe>): Recipe => ({ ...DEFAULT_RECIPE, ...r });
@@ -60,7 +60,9 @@ describe('presets', () => {
   });
 
   it('save the chosen groups', () => {
-    expect(presetValues(cropped, ['whiteBalance'])).toEqual({ temperature: 20, tint: 0 });
+    expect(presetSettings(cropped, ['whiteBalance'])).toEqual({
+      values: { temperature: 20, tint: 0 },
+    });
   });
 
   it('are cleaned when loaded from a file', () => {
