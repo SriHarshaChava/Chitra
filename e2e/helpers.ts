@@ -44,3 +44,14 @@ export async function setSlider(slider: Locator, ...values: number[]) {
   }
   await slider.dispatchEvent('pointerup');
 }
+
+type Files = Parameters<Locator['setInputFiles']>[0];
+
+/** Imports files into the library and opens the first one in Develop. */
+export async function importAndOpen(page: Page, files: Files) {
+  await page.getByTestId('file-input').setInputFiles(files);
+  const first = page.getByRole('listbox', { name: 'Photos' }).getByRole('option').first();
+  await first.waitFor();
+  await first.dblclick();
+  await page.getByRole('main', { name: 'Photo viewer' }).waitFor();
+}

@@ -8,21 +8,22 @@ Chitra is a **website that runs entirely in your browser**. Photos are processed
 - **Works in:** Chrome or Edge on Windows, and Safari on iPad (iPadOS 26 or later recommended, for WebGPU).
 - **Focus:** Nikon RAW (NEF) editing. JPEG, PNG, TIFF and video support are planned.
 
-> **Status: Phase 2 complete.** Open Nikon NEF, JPEG, PNG and TIFF files; adjust white balance, exposure, tone and colour; crop, straighten, rotate and flip; export as JPEG or 16-bit TIFF at any size. See [docs/PLAN.md](docs/PLAN.md).
+> **Status: Phase 3a (Library).** Import Nikon NEF, JPEG, PNG and TIFF files into a library that stays in your browser; rate, flag, label, tag, filter and sort them; edit white balance, exposure, tone and colour; crop and straighten; export as JPEG or 16-bit TIFF. See [docs/PLAN.md](docs/PLAN.md).
 
 ## Using Chitra
 
-- **Open photos:** tap **Open photos…** or drag files onto the window. You can open several at once; they appear in the Library panel.
+- **Import photos:** tap **Import photos…** or drag files onto the window. Chitra keeps a copy in this browser's storage, so your photos, ratings and edits are still there next time (your original files are never changed). Already-imported files are skipped.
+- **Library** (`G`): all photos as a grid. Click to select (Ctrl/⌘-click to add, Shift-click for a range, Ctrl/⌘ A for all). Rate with `0`–`5`, flag with `P` (pick), `X` (reject), `U` (unflag), colour label with `6`–`9` — or use the panel on the right, which also has **keywords**. Filter by rating, flag, label or search text, and sort by capture time, import time, name, rating or recently edited. Double-click (or `Enter`/`D`) to edit. **Remove from library** deletes Chitra's copy.
 - **On iPad:** in the file picker choose **Browse** (the Files app) rather than **Photo Library**, because the photo library may hand over a JPEG copy instead of the original NEF. Files copied from the camera's SD card (for example with Apple's SD card reader) are in Files.
 - **RAW files** first show the camera's built-in preview, then the fully developed RAW after a few seconds. The status bubble at the top tells you which one you are looking at.
 - **Zoom:** pinch, scroll wheel or trackpad pinch, or use the toolbar (**Fit**, **1:1** = 100 %, **−**, **+**). Double-tap or double-click toggles between fit and 100 %. Drag to move around.
-- **Next/previous photo:** ← and → keys.
+- **Next/previous photo:** ← and → keys (in both Library and Develop).
 - **Edit:** drag the sliders in the Develop panel. The photo updates while you drag. Double-click (or double-tap) a slider's name to reset it.
 - **Undo / redo:** the ↶ ↷ buttons, or Ctrl+Z / Ctrl+Shift+Z (⌘ on a Mac keyboard). **Reset** clears all adjustments.
 - **Crop:** press **Crop** in the bottom toolbar (or the `R` key). Drag the corners or edges to resize, drag inside to move. Choose an aspect ratio (1:1, 4:5, 3:2, 16:9…) and ⇄ to switch portrait/landscape. **Straighten** levels the horizon and automatically trims the empty corners. **Left/Right** rotate by 90°, **Flip** mirrors. Press **Done**, Enter or Esc to finish. The Info panel shows the cropped size.
 - **Export:** **Export…** in the top bar (or Ctrl/⌘ E). Choose JPEG (with quality) or 16-bit TIFF, the picture size (full size, long edge in pixels, megapixels or percentage — photos are never enlarged) and the colour space (sRGB for sharing, Display P3, or Adobe RGB for printing). The file downloads as `NAME-chitra.jpg`/`.tif`; on iPad, **Share…** offers _Save Image_ to put it in Photos.
 - **Before / after:** the **Before** button or the `\` key shows the photo without your edits.
-- Edits are remembered in this browser when you open the same file again. Your original files are only read, never changed.
+- Edits, ratings and keywords are saved automatically in the library. Your original files are only read, never changed.
 
 ## Run it on your Windows PC
 
@@ -85,7 +86,8 @@ src/
   gpu/                 WebGL2 renderer and shaders
   decode/              File types, LibRaw RAW decoding, EXIF, background worker
   render/              Tiles, zoom/pan maths, drawing, histogram
-  photos/              Loading photos and the list of opened photos
+  catalog/             The library: IndexedDB storage, import, filters
+  photos/              Loading a photo for viewing
   platform/            Browser feature detection, storage, debug console
 e2e/                   Browser tests that open real photos
 scripts/               Helper scripts (downloading test photos)

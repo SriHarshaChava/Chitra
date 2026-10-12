@@ -42,6 +42,8 @@ interface DevelopPanelProps {
   cropSize?: { width: number; height: number };
   /** Shown instead of the sliders while the crop tool is open. */
   cropPanel?: ReactNode;
+  /** Rating, flag, label and keywords of the photo. */
+  meta?: ReactNode;
 }
 
 export function DevelopPanel({
@@ -55,11 +57,13 @@ export function DevelopPanel({
   onToggleBefore,
   cropSize,
   cropPanel,
+  meta,
 }: DevelopPanelProps) {
   const disabled = Boolean(disabledReason);
   return (
     <aside className="panel panel-right" aria-label="Develop">
       <HistogramView histogram={histogram} />
+      {meta}
 
       <section className="panel-section">
         <h2 className="section-title">Info</h2>

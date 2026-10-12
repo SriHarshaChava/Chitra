@@ -1,8 +1,9 @@
 /**
- * React state for editing: the selected photo's recipe and its undo/redo history.
- * Each opened photo keeps its own history; committed recipes are saved on this device.
+ * React state for editing: the active photo's recipe and its undo/redo history.
+ * Each photo keeps its own history for this session; committed recipes are saved to
+ * the catalog through `save`.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   canRedo,
   canUndo,
@@ -14,28 +15,30 @@ import {
   type History,
 } from './history';
 import { DEFAULT_RECIPE, type Recipe } from './recipe';
-import { loadRecipe, saveRecipe } from './recipeStore';
 
-export function useDevelop(key: string | null) {
+export function useDevelop(
+  photo: { id: string; recipe: Recipe } | null,
+  save: (id: string, recipe: Recipe) => void,
+) {
   const [histories, setHistories] = useState<ReadonlyMap<string, History>>(() => new Map());
+  // The latest histories, readable synchronously inside event handlers.
+  const latest = useRef(histories);
 
-  // A photo seen for the first time starts from its saved recipe (if any).
-  const initial = useMemo(
-    () => (key ? createHistory(loadRecipe(key) ?? DEFAULT_RECIPE) : null),
-    [key],
-  );
-  const history = key ? (histories.get(key) ?? initial) : null;
+  const id = photo?.id ?? null;
+  const savedRecipe = photo?.recipe ?? DEFAULT_RECIPE;
+  // A photo opened for the first time this session starts from its saved recipe.
+  const history = id ? (histories.get(id) ?? createHistory(savedRecipe)) : null;
 
   const update = useCallback(
-    (change: (h: History) => History, save: boolean) => {
-      if (!key || !initial) return;
-      setHistories((map) => {
-        const next = change(map.get(key) ?? initial);
-        if (save) saveRecipe(key, next.past[next.index]!);
-        return new Map(map).set(key, next);
-      });
+    (change: (h: History) => History, persist: boolean) => {
+      if (!id) return;
+      const next = change(latest.current.get(id) ?? createHistory(savedRecipe));
+      const map = new Map(latest.current).set(id, next);
+      latest.current = map;
+      setHistories(map);
+      if (persist) save(id, next.past[next.index]!);
     },
-    [key, initial],
+    [id, savedRecipe, save],
   );
 
   return {

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import UTIF from 'utif';
-import { setSlider } from './helpers';
+import { setSlider, importAndOpen } from './helpers';
 
 /** 600×400 TIFF: left half red, right half blue. */
 function splitTiff(): Buffer {
@@ -37,7 +37,7 @@ const info = (page: Page) =>
 
 test.beforeEach(async ({ page }) => {
   await page.goto('./');
-  await page.getByTestId('file-input').setInputFiles({
+  await importAndOpen(page, {
     name: 'split.tif',
     mimeType: 'image/tiff',
     buffer: splitTiff(),

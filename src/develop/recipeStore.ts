@@ -1,12 +1,9 @@
 /**
- * Remembers each photo's recipe in the browser (localStorage), so edits survive a
- * page reload. Photos are recognised by name, size and modification time.
- *
- * This is a stop-gap until the catalog in Phase 3. Browser storage can be cleared
- * (see docs/decisions/0001-web-app.md), so it must never be the only copy of
- * anything important — and the original photos are never stored here at all.
+ * Phase 2 remembered each photo's recipe in localStorage, keyed by name, size and
+ * modification time. The catalog (Phase 3) now stores recipes; this module only
+ * reads those older entries so edits carry over when such a photo is imported.
  */
-import { isDefaultRecipe, sanitizeRecipe, type Recipe } from './recipe';
+import { sanitizeRecipe, type Recipe } from './recipe';
 
 const PREFIX = 'chitra.recipe.';
 
@@ -23,19 +20,6 @@ export function loadRecipe(
     return raw ? sanitizeRecipe(JSON.parse(raw)) : null;
   } catch {
     return null;
-  }
-}
-
-export function saveRecipe(
-  key: string,
-  recipe: Recipe,
-  storage: Storage | undefined = safeStorage(),
-) {
-  try {
-    if (isDefaultRecipe(recipe)) storage?.removeItem(key);
-    else storage?.setItem(key, JSON.stringify(recipe));
-  } catch {
-    // Storage full or blocked (e.g. private browsing): edits still work for this session.
   }
 }
 

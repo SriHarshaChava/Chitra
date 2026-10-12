@@ -1,37 +1,32 @@
-import type { PhotoEntry } from '../photos/usePhotoSession';
+/** Left panel in Develop: the filtered photos as a vertical filmstrip. */
+import type { CatalogPhoto } from '../catalog/types';
+import { RatingStars } from './PhotoMeta';
 
 interface LibraryPanelProps {
-  photos: PhotoEntry[];
-  selectedId?: string;
-  rejected: string[];
-  onOpenFiles: () => void;
+  photos: CatalogPhoto[];
+  thumbnails: Record<string, string>;
+  activeId: string | null;
+  onImport: () => void;
   onSelect: (id: string) => void;
 }
 
 export function LibraryPanel({
   photos,
-  selectedId,
-  rejected,
-  onOpenFiles,
+  thumbnails,
+  activeId,
+  onImport,
   onSelect,
 }: LibraryPanelProps) {
   return (
     <aside className="panel panel-left" aria-label="Library">
       <h2 className="panel-title">Library</h2>
-      <button type="button" className="button button-block" onClick={onOpenFiles}>
-        Open photos…
+      <button type="button" className="button button-block" onClick={onImport}>
+        Import photos…
       </button>
-
-      {rejected.length > 0 && (
-        <p className="panel-warning" role="status">
-          Skipped unsupported file{rejected.length > 1 ? 's' : ''}: {rejected.join(', ')}
-        </p>
-      )}
-
       {photos.length === 0 ? (
         <p className="panel-note">
-          Nikon NEF, JPEG, PNG and TIFF are supported. Photos are read on this device and your
-          originals are never modified.
+          Nikon NEF, JPEG, PNG and TIFF are supported. Photos stay on this device and your originals
+          are never modified.
         </p>
       ) : (
         <ul className="photo-list" aria-label="Opened photos">
@@ -39,20 +34,21 @@ export function LibraryPanel({
             <li key={photo.id}>
               <button
                 type="button"
-                className={`photo-item${photo.id === selectedId ? ' photo-item-selected' : ''}`}
-                aria-current={photo.id === selectedId ? 'true' : undefined}
+                className={`photo-item${photo.id === activeId ? ' photo-item-selected' : ''}`}
+                aria-current={photo.id === activeId ? 'true' : undefined}
                 onClick={() => onSelect(photo.id)}
               >
                 <span className="photo-thumb">
-                  {photo.thumbnailUrl ? (
-                    <img src={photo.thumbnailUrl} alt="" />
+                  {thumbnails[photo.id] ? (
+                    <img src={thumbnails[photo.id]} alt="" />
                   ) : (
-                    <span className="photo-thumb-placeholder">
-                      {photo.kind === 'raw' ? 'RAW' : ''}
-                    </span>
+                    <span className="photo-thumb-placeholder">{photo.kind.toUpperCase()}</span>
                   )}
                 </span>
-                <span className="photo-name">{photo.file.name}</span>
+                <span className="photo-item-text">
+                  <span className="photo-name">{photo.name}</span>
+                  <RatingStars value={photo.rating} size="small" />
+                </span>
               </button>
             </li>
           ))}

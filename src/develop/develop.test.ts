@@ -12,7 +12,7 @@ import {
 } from './developMath';
 import { canRedo, canUndo, commit, createHistory, preview, redo, undo } from './history';
 import { DEFAULT_RECIPE, isDefaultRecipe, sanitizeRecipe, type Recipe } from './recipe';
-import { loadRecipe, photoKey, saveRecipe } from './recipeStore';
+import { loadRecipe, photoKey } from './recipeStore';
 import { planckianXy, sliderWhitePoint, whiteBalanceMatrix } from './whiteBalance';
 
 const IDENTITY: Matrix3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -202,7 +202,7 @@ describe('history', () => {
   });
 });
 
-describe('recipeStore', () => {
+describe('legacy recipe store', () => {
   const memory = (): Storage => {
     const data = new Map<string, string>();
     return {
@@ -217,18 +217,12 @@ describe('recipeStore', () => {
     };
   };
 
-  it('saves and loads a recipe', () => {
+  it('reads recipes remembered by Phase 2', () => {
     const storage = memory();
     const key = photoKey({ name: 'DSC_1.NEF', size: 10, lastModified: 5 });
-    saveRecipe(key, recipe({ exposure: 0.5 }), storage);
+    storage.setItem(key, JSON.stringify({ version: 1, exposure: 0.5 }));
     expect(loadRecipe(key, storage)?.exposure).toBe(0.5);
-  });
-
-  it('removes the entry when the recipe is back to default', () => {
-    const storage = memory();
-    saveRecipe('k', recipe({ exposure: 0.5 }), storage);
-    saveRecipe('k', DEFAULT_RECIPE, storage);
-    expect(storage.length).toBe(0);
+    expect(loadRecipe('missing', storage)).toBeNull();
   });
 
   it('survives corrupt data', () => {

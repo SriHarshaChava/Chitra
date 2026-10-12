@@ -229,17 +229,20 @@ export class DevelopRenderer {
   }
 
   /**
-   * Develops a small version of the final (cropped) photo and counts its pixel values.
+   * Develops a small version of the final (cropped) photo, at most `maxSize` pixels
+   * on the long edge. Returns 8-bit RGBA rows from the top.
    * @param imageToCrop image pixel → cropped photo pixel
    */
-  histogram(
+  renderSmall(
     image: GpuImage,
     imageToCrop: Matrix3,
     cropSize: { width: number; height: number },
     settings: RenderSettings,
-  ): Histogram {
+    maxSize: number,
+    outputMatrix: Matrix3 = this.outputMatrix,
+  ): { pixels: Uint8Array; width: number; height: number } {
     const gl = this.gl;
-    const scale = Math.min(1, HISTOGRAM_SIZE / Math.max(cropSize.width, cropSize.height));
+    const scale = Math.min(1, maxSize / Math.max(cropSize.width, cropSize.height));
     const w = Math.max(1, Math.round(cropSize.width * scale));
     const h = Math.max(1, Math.round(cropSize.height * scale));
 
@@ -251,10 +254,12 @@ export class DevelopRenderer {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
     gl.viewport(0, 0, w, h);
     gl.disable(gl.SCISSOR_TEST);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
-    // Map the cropped photo onto the whole small framebuffer.
+    // Map the cropped photo onto the whole small framebuffer (row 0 = top of the photo).
     const cropToClip: Matrix3 = [2 / cropSize.width, 0, -1, 0, 2 / cropSize.height, -1, 0, 0, 1];
-    this.useProgram(image, multiply(cropToClip, imageToCrop), settings);
+    this.useProgram(image, multiply(cropToClip, imageToCrop), settings, outputMatrix);
     this.drawRect(image.overview.texture, fullRect(image), fullRect(image), gl.LINEAR);
 
     const pixels = new Uint8Array(w * h * 4);
@@ -262,7 +267,19 @@ export class DevelopRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.deleteFramebuffer(framebuffer);
     gl.deleteTexture(target);
-    return computeHistogram(pixels);
+    return { pixels, width: w, height: h };
+  }
+
+  /** Develops a small version of the final (cropped) photo and counts its pixel values. */
+  histogram(
+    image: GpuImage,
+    imageToCrop: Matrix3,
+    cropSize: { width: number; height: number },
+    settings: RenderSettings,
+  ): Histogram {
+    return computeHistogram(
+      this.renderSmall(image, imageToCrop, cropSize, settings, HISTOGRAM_SIZE).pixels,
+    );
   }
 
   /** True if full-precision (32-bit float) export is possible on this GPU. */
