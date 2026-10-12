@@ -218,3 +218,30 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------
+# Chitra (Node / Vite / TypeScript)
+# ---------------------------------------------------------------
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+test-results/
+playwright-report/
+.DS_Store
+Thumbs.db
+
+# Personal photos and videos must never be committed.
+# Keep test files in samples/ (ignored) on your own machine.
+samples/
+*.nef
+*.NEF
+*.nrw
+*.NRW
+*.dng
+*.DNG
+*.mov
+*.MOV
+*.mp4
+*.MP4

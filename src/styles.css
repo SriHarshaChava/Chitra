@@ -1,0 +1,431 @@
+/*
+ * Chitra's interface uses neutral greys on purpose: a coloured interface would bias how
+ * you judge the colours in a photo (the same reason Lightroom's interface is grey).
+ * One warm accent colour is used for active controls only.
+ */
+:root {
+  --bg: #1e1e1e;
+  --panel: #262626;
+  --panel-raised: #2f2f2f;
+  --border: #3a3a3a;
+  --text: #e6e6e6;
+  --text-muted: #9a9a9a;
+  --accent: #e8a33d;
+  --accent-text: #1a1a1a;
+  --ok: #5cb85c;
+  --bad: #d9534f;
+  --unknown: #8a8a8a;
+  --radius: 6px;
+  --touch: 44px; /* Apple's minimum comfortable touch target */
+  --top-bar-height: 52px;
+
+  color-scheme: dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  overscroll-behavior: none;
+}
+
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+/* ---------- Layout ---------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  /* dvh accounts for Safari's collapsing toolbar on iPad. */
+  height: 100vh;
+  height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.workspace.with-library {
+  grid-template-columns: 240px 1fr;
+}
+
+.workspace.with-develop {
+  grid-template-columns: 1fr 300px;
+}
+
+.workspace.with-library.with-develop {
+  grid-template-columns: 240px 1fr 300px;
+}
+
+/* ---------- Top bar ---------- */
+
+.top-bar {
+  height: var(--top-bar-height);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.top-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand {
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+
+.module-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.module-tab {
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.module-tab-active {
+  color: var(--text);
+  background: var(--panel-raised);
+}
+
+.module-tab-disabled {
+  opacity: 0.5;
+}
+
+/* ---------- Buttons ---------- */
+
+.button,
+.icon-button {
+  min-height: var(--touch);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.button {
+  padding: 0 14px;
+}
+
+.icon-button {
+  min-width: var(--touch);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.button:hover:not(:disabled),
+.icon-button:hover:not(:disabled) {
+  border-color: #555;
+}
+
+.button:focus-visible,
+.icon-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.button-block {
+  width: 100%;
+}
+
+/* ---------- Panels ---------- */
+
+.panel {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panel-left {
+  border-right: 1px solid var(--border);
+}
+
+.panel-right {
+  border-left: 1px solid var(--border);
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.panel-note {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-size: 13px;
+}
+
+.slider input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.slider input:disabled {
+  opacity: 0.4;
+}
+
+/* ---------- Viewer ---------- */
+
+.viewer {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #161616;
+}
+
+.viewer-empty {
+  max-width: 340px;
+  padding: 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.viewer-mark {
+  width: 72px;
+  height: 72px;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.6;
+}
+
+.viewer-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* ---------- Diagnostics modal ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 60%);
+}
+
+.modal {
+  width: min(560px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-header h2 {
+  font-size: 18px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.capability-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.capability {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.capability-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.capability-label {
+  font-weight: 600;
+}
+
+.capability-detail {
+  font-size: 12px;
+  font-family: ui-monospace, Consolas, monospace;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.capability-why {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 50%;
+}
+
+.status-yes {
+  background: var(--ok);
+}
+.status-no {
+  background: var(--bad);
+}
+.status-unknown {
+  background: var(--unknown);
+}
+
+.status-text {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.status-text-yes {
+  color: var(--ok);
+}
+.status-text-no {
+  color: var(--bad);
+}
+.status-text-unknown {
+  color: var(--unknown);
+}
+
+/* ---------- Narrow screens (iPad portrait and smaller) ---------- */
+
+@media (max-width: 760px) {
+  .workspace.with-library,
+  .workspace.with-develop,
+  .workspace.with-library.with-develop {
+    grid-template-columns: 1fr;
+  }
+
+  /* Side panels float over the photo instead of squeezing it. */
+  .panel {
+    position: fixed;
+    top: calc(var(--top-bar-height) + env(safe-area-inset-top));
+    bottom: 0;
+    z-index: 5;
+    width: min(300px, 85vw);
+    box-shadow: 0 0 24px rgb(0 0 0 / 50%);
+  }
+
+  .panel-left {
+    left: 0;
+  }
+
+  .panel-right {
+    right: 0;
+  }
+
+  .module-tabs {
+    display: none;
+  }
+}
