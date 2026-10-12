@@ -5,8 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { decoderFor, type DecoderKind } from '../decode/fileTypes';
 import type { PhotoInfo } from '../decode/photoInfo';
-import { displayColorSpace } from '../render/displayColor';
-import type { TiledImage } from '../render/tiledImage';
+import type { SourceImage } from '../render/sourceImage';
 import { loadPhoto } from './loadPhoto';
 import { makeThumbnail } from './thumbnail';
 
@@ -23,7 +22,8 @@ export interface CurrentPhoto {
   id: string;
   status: LoadStatus;
   info?: PhotoInfo;
-  image?: TiledImage;
+  /** Decoded pixels; the viewer uploads them to the GPU. */
+  image?: SourceImage;
   /** True while showing the camera's embedded preview instead of the developed RAW. */
   isPreview: boolean;
   decodeMs?: number;
@@ -37,7 +37,9 @@ export function usePhotoSession() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [current, setCurrent] = useState<CurrentPhoto | null>(null);
   const [rejected, setRejected] = useState<string[]>([]);
-  const shownImage = useRef<TiledImage | null>(null);
+  // Incremented to decode the selected photo again (after a GPU reset).
+  const [reloadCount, setReloadCount] = useState(0);
+  const shownImage = useRef<SourceImage | null>(null);
 
   const addFiles = useCallback((files: Iterable<File>) => {
     const accepted: PhotoEntry[] = [];
@@ -63,10 +65,10 @@ export function usePhotoSession() {
     if (!selectedKey || !selectedFile) return;
     const selected = { id: selectedKey, file: selectedFile };
     const controller = new AbortController();
-    const replaceImage = (image: TiledImage | undefined) => {
+    const replaceImage = (image: SourceImage | undefined) => {
       const old = shownImage.current;
       shownImage.current = image ?? null;
-      if (old && old !== image) old.close();
+      if (old && old !== image) old.release();
     };
 
     // Merges a change into the selected photo's state (starting fresh if needed).
@@ -78,7 +80,6 @@ export function usePhotoSession() {
 
     loadPhoto(
       selected.file,
-      displayColorSpace(),
       {
         onInfo: (info) => update({ info }),
         onPreview: (image) => {
@@ -100,10 +101,10 @@ export function usePhotoSession() {
     return () => {
       controller.abort();
       replaceImage(undefined);
-      // The image was just closed, so forget this photo's state.
+      // The image was just released, so forget this photo's state.
       setCurrent((c) => (c?.id === selected.id ? null : c));
     };
-  }, [selectedKey, selectedFile]);
+  }, [selectedKey, selectedFile, reloadCount]);
 
   // Create thumbnails one at a time in the background.
   const thumbnailBusy = useRef(false);
@@ -143,6 +144,7 @@ export function usePhotoSession() {
     rejected,
     addFiles,
     select: setSelectedId,
+    reload: useCallback(() => setReloadCount((n) => n + 1), []),
     selectRelative,
   };
 }

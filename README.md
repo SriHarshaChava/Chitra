@@ -8,7 +8,7 @@ Chitra is a **website that runs entirely in your browser**. Photos are processed
 - **Works in:** Chrome or Edge on Windows, and Safari on iPad (iPadOS 26 or later recommended, for WebGPU).
 - **Focus:** Nikon RAW (NEF) editing. JPEG, PNG, TIFF and video support are planned.
 
-> **Status: Phase 1 (RAW viewer).** Open Nikon NEF, JPEG, PNG and TIFF files, zoom and pan, and see the histogram and shooting info. Editing arrives in Phase 2. See [docs/PLAN.md](docs/PLAN.md).
+> **Status: Phase 2a (Basic editing).** Open Nikon NEF, JPEG, PNG and TIFF files and adjust white balance, exposure, tone and colour with live preview, undo/redo and before/after. Crop and export come next. See [docs/PLAN.md](docs/PLAN.md).
 
 ## Using Chitra
 
@@ -17,7 +17,10 @@ Chitra is a **website that runs entirely in your browser**. Photos are processed
 - **RAW files** first show the camera's built-in preview, then the fully developed RAW after a few seconds. The status bubble at the top tells you which one you are looking at.
 - **Zoom:** pinch, scroll wheel or trackpad pinch, or use the toolbar (**Fit**, **1:1** = 100 %, **−**, **+**). Double-tap or double-click toggles between fit and 100 %. Drag to move around.
 - **Next/previous photo:** ← and → keys.
-- Your original files are only read, never changed.
+- **Edit:** drag the sliders in the Develop panel. The photo updates while you drag. Double-click (or double-tap) a slider's name to reset it.
+- **Undo / redo:** the ↶ ↷ buttons, or Ctrl+Z / Ctrl+Shift+Z (⌘ on a Mac keyboard). **Reset** clears all adjustments.
+- **Before / after:** the **Before** button or the `\` key shows the photo without your edits.
+- Edits are remembered in this browser when you open the same file again. Your original files are only read, never changed.
 
 ## Run it on your Windows PC
 
@@ -76,6 +79,8 @@ src/
   App.tsx              App shell: top bar, panels, viewer
   components/          UI pieces (viewer, library, histogram, info, system check)
   color/               Colour-space maths (Rec.2020, Display P3, sRGB, tone curve)
+  develop/             Edit recipes, develop maths, white balance, undo/redo
+  gpu/                 WebGL2 renderer and shaders
   decode/              File types, LibRaw RAW decoding, EXIF, background worker
   render/              Tiles, zoom/pan maths, drawing, histogram
   photos/              Loading photos and the list of opened photos

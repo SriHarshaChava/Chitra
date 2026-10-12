@@ -233,20 +233,92 @@ p {
 
 .slider {
   display: grid;
-  grid-template-columns: 90px 1fr;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'label value'
+    'input input';
   align-items: center;
-  gap: 8px;
-  min-height: 32px;
+  column-gap: 8px;
   font-size: 13px;
 }
 
+.slider-label {
+  grid-area: label;
+  color: var(--text-muted);
+  user-select: none;
+  cursor: default;
+}
+
+.slider-changed .slider-label {
+  color: var(--text);
+}
+
+.slider-value {
+  grid-area: value;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .slider input {
+  grid-area: input;
   width: 100%;
+  /* Tall enough to grab comfortably with a finger. */
+  min-height: 30px;
+  margin: 0;
+  /* Neutral until moved, so centred sliders don't look "half applied". */
+  accent-color: #8a8a8a;
+  touch-action: pan-y;
+}
+
+.slider-changed input {
   accent-color: var(--accent);
 }
 
 .slider input:disabled {
   opacity: 0.4;
+}
+
+.develop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.develop-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.small-button {
+  min-width: 36px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.small-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.small-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.small-button-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ---------- Viewer ---------- */
@@ -532,10 +604,6 @@ p {
 .info-row dd {
   margin: 0;
   word-break: break-word;
-}
-
-.panel-title-spaced {
-  margin-top: 8px;
 }
 
 /* ---------- Diagnostics modal ---------- */

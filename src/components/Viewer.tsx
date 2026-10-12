@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { formatFileSize } from '../decode/photoInfo';
 import type { CurrentPhoto } from '../photos/usePhotoSession';
+import { DevelopRenderer, type GpuImage, type RenderSettings } from '../gpu/renderer';
 import { displayColorSpace } from '../render/displayColor';
-import { drawTiledImage } from '../render/drawTiledImage';
-import type { TiledImage } from '../render/tiledImage';
+import type { Histogram } from '../render/histogram';
+import type { SourceImage } from '../render/sourceImage';
 import {
   constrainView,
   fitView,
@@ -21,15 +22,34 @@ interface ViewerProps {
   current: CurrentPhoto | null;
   fileName?: string;
   fileSize?: number;
+  /** Develop settings to apply; `null` shows the image unedited. */
+  settings: RenderSettings;
+  /** Shown as a badge while comparing with the original. */
+  showingBefore?: boolean;
   onOpenFiles: () => void;
+  onHistogram: (histogram: Histogram | undefined) => void;
+  /** The GPU was reset (e.g. iPad backgrounding); the photo must be decoded again. */
+  onGpuReset: () => void;
 }
+
+/** Wait this long after the last change before recomputing the histogram. */
+const HISTOGRAM_DELAY_MS = 120;
 
 /** A tap is a short press that barely moves; two taps close together toggle zoom. */
 const TAP_MAX_MOVE_CSS = 8;
 const TAP_MAX_MS = 300;
 const DOUBLE_TAP_MS = 350;
 
-export function Viewer({ current, fileName, fileSize, onOpenFiles }: ViewerProps) {
+export function Viewer({
+  current,
+  fileName,
+  fileSize,
+  settings,
+  showingBefore,
+  onOpenFiles,
+  onHistogram,
+  onGpuReset,
+}: ViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<View | null>(null);
@@ -38,26 +58,72 @@ export function Viewer({ current, fileName, fileSize, onOpenFiles }: ViewerProps
   const frameRef = useRef(0);
   const [zoomPercent, setZoomPercent] = useState<number | null>(null);
 
+  const [gpuError, setGpuError] = useState<string | null>(null);
+
   const image = current?.image;
   const photoId = current?.id;
-  const imageRef = useRef<TiledImage | undefined>(image);
+  /** Size and rotation of the photo on screen (used by the zoom maths). */
+  const imageRef = useRef<SourceImage | undefined>(image);
   const photoIdRef = useRef<string | undefined>(photoId);
+  const rendererRef = useRef<DevelopRenderer | null>(null);
+  const gpuRef = useRef<{ source: SourceImage; gpu: GpuImage } | null>(null);
+  const settingsRef = useRef<RenderSettings>(settings);
+  const histogramTimer = useRef(0);
+  const callbacks = useRef({ onHistogram, onGpuReset });
+  useEffect(() => {
+    callbacks.current = { onHistogram, onGpuReset };
+  });
+
+  // The renderer is created as soon as the canvas exists.
+  const attachCanvas = useCallback((canvas: HTMLCanvasElement | null) => {
+    canvasRef.current = canvas;
+    if (!canvas || rendererRef.current) return;
+    try {
+      rendererRef.current = new DevelopRenderer(canvas, displayColorSpace());
+    } catch (error) {
+      setGpuError(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  const getRenderer = useCallback((): DevelopRenderer | null => {
+    if (!rendererRef.current && canvasRef.current) {
+      // After a GPU reset the renderer is rebuilt on the same canvas.
+      try {
+        rendererRef.current = new DevelopRenderer(canvasRef.current, displayColorSpace());
+      } catch {
+        return null;
+      }
+    }
+    return rendererRef.current;
+  }, []);
 
   const draw = useCallback(() => {
     frameRef.current = 0;
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d', { colorSpace: displayColorSpace() });
-    if (!canvas || !ctx) return;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const img = imageRef.current;
-    const view = viewRef.current;
-    if (img && view) drawTiledImage(ctx, img, view);
-  }, []);
+    const renderer = getRenderer();
+    if (!renderer || renderer.gl.isContextLost()) return;
+    renderer.draw(gpuRef.current?.gpu ?? null, viewRef.current, settingsRef.current);
+  }, [getRenderer]);
 
   const scheduleDraw = useCallback(() => {
     if (!frameRef.current) frameRef.current = requestAnimationFrame(draw);
   }, [draw]);
+
+  const scheduleHistogram = useCallback(() => {
+    window.clearTimeout(histogramTimer.current);
+    histogramTimer.current = window.setTimeout(() => {
+      const renderer = rendererRef.current;
+      const gpu = gpuRef.current?.gpu;
+      if (!renderer || !gpu || renderer.gl.isContextLost()) return;
+      callbacks.current.onHistogram(renderer.histogram(gpu, settingsRef.current));
+    }, HISTOGRAM_DELAY_MS);
+  }, []);
+
+  // New develop settings: redraw now, update the histogram shortly after.
+  useLayoutEffect(() => {
+    settingsRef.current = settings;
+    scheduleDraw();
+    scheduleHistogram();
+  }, [settings, scheduleDraw, scheduleHistogram]);
 
   const setView = useCallback(
     (next: View, fit = false) => {
@@ -89,11 +155,31 @@ export function Viewer({ current, fileName, fileSize, onOpenFiles }: ViewerProps
     const samePhoto = photoIdRef.current === photoId;
     imageRef.current = image;
     photoIdRef.current = photoId;
+
+    // Move the new pixels to the GPU (once per image), then free the CPU copy.
+    const renderer = getRenderer();
+    if (renderer && gpuRef.current?.source !== image) {
+      if (gpuRef.current) renderer.disposeImage(gpuRef.current.gpu);
+      gpuRef.current = null;
+      if (image) {
+        try {
+          gpuRef.current = { source: image, gpu: renderer.upload(image) };
+        } catch (error) {
+          // Rare (e.g. out of GPU memory) but must be visible, so set state here.
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setGpuError(error instanceof Error ? error.message : String(error));
+        }
+        image.release();
+      }
+    }
+
     if (!image) {
       viewRef.current = null;
+      callbacks.current.onHistogram(undefined);
       scheduleDraw();
       return;
     }
+    scheduleHistogram();
     const view = viewRef.current;
     if (samePhoto && previous && view && !fitModeRef.current && previous !== image) {
       const ratio =
@@ -102,7 +188,7 @@ export function Viewer({ current, fileName, fileSize, onOpenFiles }: ViewerProps
     } else {
       fit();
     }
-  }, [image, photoId, fit, setView, scheduleDraw]);
+  }, [image, photoId, fit, setView, scheduleDraw, scheduleHistogram, getRenderer]);
 
   // Keep the canvas matched to its container size, in device pixels.
   useEffect(() => {
@@ -124,7 +210,35 @@ export function Viewer({ current, fileName, fileSize, onOpenFiles }: ViewerProps
     return () => observer.disconnect();
   }, [fit, setView, scheduleDraw]);
 
-  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(frameRef.current);
+      window.clearTimeout(histogramTimer.current);
+    },
+    [],
+  );
+
+  // The GPU can be reset by the system (for example when an iPad app goes to the
+  // background). Textures are lost then, so start again with a fresh renderer.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onLost = (event: Event) => {
+      event.preventDefault(); // allows the context to be restored
+      gpuRef.current = null;
+    };
+    const onRestored = () => {
+      rendererRef.current = null;
+      callbacks.current.onGpuReset();
+      scheduleDraw();
+    };
+    canvas.addEventListener('webglcontextlost', onLost);
+    canvas.addEventListener('webglcontextrestored', onRestored);
+    return () => {
+      canvas.removeEventListener('webglcontextlost', onLost);
+      canvas.removeEventListener('webglcontextrestored', onRestored);
+    };
+  }, [scheduleDraw]);
 
   // ---- Gestures: drag to pan, pinch / wheel to zoom, double-tap to toggle 100 % ----
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -265,7 +379,7 @@ export function Viewer({ current, fileName, fileSize, onOpenFiles }: ViewerProps
     <main className="viewer" aria-label="Photo viewer">
       <div ref={containerRef} className="viewer-canvas-wrap">
         <canvas
-          ref={canvasRef}
+          ref={attachCanvas}
           className="viewer-canvas"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -283,6 +397,12 @@ export function Viewer({ current, fileName, fileSize, onOpenFiles }: ViewerProps
           <p className="muted">Opening {fileName}…</p>
         </div>
       )}
+      {gpuError && (
+        <div className="viewer-overlay-center" role="alert">
+          <p className="viewer-title">Graphics problem</p>
+          <p className="muted">{gpuError}</p>
+        </div>
+      )}
       {current?.status === 'error' && (
         <div className="viewer-overlay-center" role="alert">
           <p className="viewer-title">Couldn't open {fileName}</p>
@@ -293,7 +413,9 @@ export function Viewer({ current, fileName, fileSize, onOpenFiles }: ViewerProps
       {current && image && (
         <>
           <div className="viewer-status" aria-live="polite">
-            {current.isPreview ? (
+            {showingBefore ? (
+              <>Before (original settings)</>
+            ) : current.isPreview ? (
               <>
                 <span className="spinner spinner-small" aria-hidden="true" /> Camera preview ·
                 developing RAW…

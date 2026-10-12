@@ -27,7 +27,7 @@
    - iPad Safari limits a single canvas to about 16.7 megapixels, and a D5600 photo is 24 MP.
    - The overview is drawn when zoomed out; the full-resolution tiles are drawn when zoomed in.
 
-6. **Drawing uses Canvas 2D for now.** Viewing only needs scaling and moving, which Canvas 2D does on the GPU. WebGPU arrives in Phase 2, when every slider change must re-process pixels in real time.
+6. **Drawing used Canvas 2D in Phase 1** (superseded by [0003](0003-gpu-develop-pipeline.md): the GPU now draws and develops). Viewing only needs scaling and moving, which Canvas 2D does on the GPU. WebGPU arrives in Phase 2, when every slider change must re-process pixels in real time.
 
 ## Consequences
 

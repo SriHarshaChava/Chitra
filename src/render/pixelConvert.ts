@@ -1,58 +1,119 @@
 /**
- * Per-pixel conversion loops. These run inside a Web Worker for big photos, so they
- * avoid allocations and function calls inside the loops.
+ * Pixel loops used by the background worker. They avoid allocations and function
+ * calls inside the loops because they touch tens of millions of values.
  */
-import { ENCODE_LUT_SIZE, type Matrix3 } from '../color/colorSpaces';
-import type { TileRect } from './tiles';
+import { uint16ToHalfLut } from '../gpu/halfFloat';
+import type { Rect } from './tiles';
 
-/**
- * Converts part of a linear 16-bit RGB image (3 values per pixel, e.g. LibRaw output in
- * linear Rec.2020) into display-ready 8-bit RGBA.
- *
- * @param matrix linear source RGB → linear display RGB
- * @param lut    encoding lookup table from `buildEncodeLut`
- */
-export function convertLinearRgb16(
-  src: Uint16Array,
-  srcWidth: number,
-  rect: TileRect,
-  matrix: Matrix3,
-  lut: Uint8Array,
-): Uint8ClampedArray<ArrayBuffer> {
-  const out = new Uint8ClampedArray(rect.width * rect.height * 4);
-  // Fold the 16-bit → 0..1 scaling and the LUT index scaling into the matrix.
-  const k = (ENCODE_LUT_SIZE - 1) / 65535;
-  const m0 = matrix[0] * k,
-    m1 = matrix[1] * k,
-    m2 = matrix[2] * k;
-  const m3 = matrix[3] * k,
-    m4 = matrix[4] * k,
-    m5 = matrix[5] * k;
-  const m6 = matrix[6] * k,
-    m7 = matrix[7] * k,
-    m8 = matrix[8] * k;
-  const maxIndex = ENCODE_LUT_SIZE - 1;
+/** RGB image, 3 values per pixel. */
+export interface RgbImage<T extends Float32Array | Uint16Array> {
+  width: number;
+  height: number;
+  data: T;
+}
 
+/** Copies a rectangle of 16-bit RGB samples and converts them to half-float bits. */
+export function uint16RectToHalf(src: Uint16Array, srcWidth: number, rect: Rect): Uint16Array {
+  const lut = uint16ToHalfLut();
+  const out = new Uint16Array(rect.width * rect.height * 3);
   let o = 0;
   for (let row = 0; row < rect.height; row++) {
     let i = ((rect.y + row) * srcWidth + rect.x) * 3;
-    for (let col = 0; col < rect.width; col++, i += 3, o += 4) {
-      const r = src[i]!,
-        g = src[i + 1]!,
-        b = src[i + 2]!;
-      let dr = m0 * r + m1 * g + m2 * b;
-      let dg = m3 * r + m4 * g + m5 * b;
-      let db = m6 * r + m7 * g + m8 * b;
-      // Colours outside the display gamut are clipped (better gamut mapping comes later).
-      dr = dr < 0 ? 0 : dr > maxIndex ? maxIndex : dr;
-      dg = dg < 0 ? 0 : dg > maxIndex ? maxIndex : dg;
-      db = db < 0 ? 0 : db > maxIndex ? maxIndex : db;
-      out[o] = lut[(dr + 0.5) | 0]!;
-      out[o + 1] = lut[(dg + 0.5) | 0]!;
-      out[o + 2] = lut[(db + 0.5) | 0]!;
-      out[o + 3] = 255;
+    const end = i + rect.width * 3;
+    for (; i < end; i++) out[o++] = lut[src[i]!]!;
+  }
+  return out;
+}
+
+/** Copies a rectangle of 16-bit RGB samples as 0..1 floats. */
+export function uint16RectToFloat(
+  src: Uint16Array,
+  srcWidth: number,
+  rect: Rect,
+): RgbImage<Float32Array> {
+  const out = new Float32Array(rect.width * rect.height * 3);
+  const norm = 1 / 65535;
+  let o = 0;
+  for (let row = 0; row < rect.height; row++) {
+    let i = ((rect.y + row) * srcWidth + rect.x) * 3;
+    const end = i + rect.width * 3;
+    for (; i < end; i++) out[o++] = src[i]! * norm;
+  }
+  return { width: rect.width, height: rect.height, data: out };
+}
+
+/**
+ * Shrinks a 16-bit RGB image by averaging blocks of pixels (an "area" or box filter).
+ * Averaging linear light is physically correct: it is what a lower-resolution sensor
+ * would have recorded. Output values are 0..1 floats.
+ */
+export function downscaleUint16(
+  src: Uint16Array,
+  width: number,
+  height: number,
+  outWidth: number,
+  outHeight: number,
+): RgbImage<Float32Array> {
+  const out = new Float32Array(outWidth * outHeight * 3);
+  const sx = width / outWidth;
+  const sy = height / outHeight;
+  const norm = 1 / 65535;
+  for (let oy = 0; oy < outHeight; oy++) {
+    const y0 = Math.floor(oy * sy);
+    const y1 = Math.max(y0 + 1, Math.min(height, Math.floor((oy + 1) * sy)));
+    for (let ox = 0; ox < outWidth; ox++) {
+      const x0 = Math.floor(ox * sx);
+      const x1 = Math.max(x0 + 1, Math.min(width, Math.floor((ox + 1) * sx)));
+      let r = 0,
+        g = 0,
+        b = 0;
+      for (let y = y0; y < y1; y++) {
+        let i = (y * width + x0) * 3;
+        for (let x = x0; x < x1; x++, i += 3) {
+          r += src[i]!;
+          g += src[i + 1]!;
+          b += src[i + 2]!;
+        }
+      }
+      const scale = norm / ((y1 - y0) * (x1 - x0));
+      const o = (oy * outWidth + ox) * 3;
+      out[o] = r * scale;
+      out[o + 1] = g * scale;
+      out[o + 2] = b * scale;
     }
   }
+  return { width: outWidth, height: outHeight, data: out };
+}
+
+/** Halves an RGB float image (2×2 average), the way GPU mipmap levels are made. */
+export function halveFloat(img: RgbImage<Float32Array>): RgbImage<Float32Array> {
+  const width = Math.max(1, Math.floor(img.width / 2));
+  const height = Math.max(1, Math.floor(img.height / 2));
+  const out = new Float32Array(width * height * 3);
+  const { data, width: w, height: h } = img;
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.min(h - 1, y * 2);
+    const y1 = Math.min(h - 1, y * 2 + 1);
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.min(w - 1, x * 2);
+      const x1 = Math.min(w - 1, x * 2 + 1);
+      const a = (y0 * w + x0) * 3;
+      const b = (y0 * w + x1) * 3;
+      const c = (y1 * w + x0) * 3;
+      const d = (y1 * w + x1) * 3;
+      const o = (y * width + x) * 3;
+      for (let k = 0; k < 3; k++) {
+        out[o + k] = (data[a + k]! + data[b + k]! + data[c + k]! + data[d + k]!) * 0.25;
+      }
+    }
+  }
+  return { width, height, data: out };
+}
+
+/** Float RGB → half-float bits. */
+export function floatToHalfBits(data: Float32Array, toHalf: (v: number) => number): Uint16Array {
+  const out = new Uint16Array(data.length);
+  for (let i = 0; i < data.length; i++) out[i] = toHalf(data[i]!);
   return out;
 }
 
@@ -60,7 +121,7 @@ export function convertLinearRgb16(
 export function copyRgbaRect(
   src: Uint8Array | Uint8ClampedArray,
   srcWidth: number,
-  rect: TileRect,
+  rect: Rect,
 ): Uint8ClampedArray<ArrayBuffer> {
   const out = new Uint8ClampedArray(rect.width * rect.height * 4);
   const rowBytes = rect.width * 4;

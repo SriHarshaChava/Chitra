@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   baseCurve,
-  buildEncodeLut,
   decodeSrgb,
   encodeSrgb,
-  ENCODE_LUT_SIZE,
   invert,
   multiply,
   PRIMARIES,
@@ -103,19 +101,5 @@ describe('baseCurve', () => {
     for (let v = 0.01; v <= 1; v += 0.01) {
       expect(baseCurve(v)).toBeGreaterThanOrEqual(baseCurve(v - 0.01));
     }
-  });
-});
-
-describe('buildEncodeLut', () => {
-  it('covers black to white', () => {
-    const lut = buildEncodeLut();
-    expect(lut.length).toBe(ENCODE_LUT_SIZE);
-    expect(lut[0]).toBe(0);
-    expect(lut[ENCODE_LUT_SIZE - 1]).toBe(255);
-  });
-
-  it('never decreases', () => {
-    const lut = buildEncodeLut();
-    for (let i = 1; i < lut.length; i++) expect(lut[i]!).toBeGreaterThanOrEqual(lut[i - 1]!);
   });
 });

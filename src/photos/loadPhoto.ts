@@ -8,22 +8,22 @@
  * The original file is only read, never modified.
  */
 import exifr from 'exifr';
-import type { DisplayColorSpace } from '../color/colorSpaces';
 import { convertInWorker } from '../decode/convertClient';
 import { decoderFor } from '../decode/fileTypes';
 import { infoFromExif, mergeInfo, type ExifFields, type PhotoInfo } from '../decode/photoInfo';
 import { openRaw } from '../decode/raw';
 import {
-  tiledImageFromBitmap,
-  tiledImageFromBuffers,
+  linearSource,
+  renderedSourceFromBitmap,
+  renderedSourceFromTiles,
   type Rotation,
-  type TiledImage,
-} from '../render/tiledImage';
+  type SourceImage,
+} from '../render/sourceImage';
 
 export interface LoadCallbacks {
   onInfo(info: PhotoInfo): void;
-  onPreview(image: TiledImage): void;
-  onFull(image: TiledImage, decodeMs: number): void;
+  onPreview(image: SourceImage): void;
+  onFull(image: SourceImage, decodeMs: number): void;
 }
 
 const EXIF_FIELDS: (keyof ExifFields)[] = [
@@ -50,19 +50,18 @@ export async function readExif(file: Blob): Promise<PhotoInfo> {
 
 /**
  * Loads `file`. If `signal` is aborted (the user picked another photo) any images
- * created after that point are closed instead of being reported.
+ * created after that point are released instead of being reported.
  */
 export async function loadPhoto(
   file: File,
-  displaySpace: DisplayColorSpace,
   callbacks: LoadCallbacks,
   signal: AbortSignal,
 ): Promise<void> {
   const kind = decoderFor(file.name);
   if (!kind) throw new Error(`Chitra can't open "${file.name}" yet.`);
 
-  const deliver = (image: TiledImage, report: (image: TiledImage) => void) => {
-    if (signal.aborted) image.close();
+  const deliver = (image: SourceImage, report: (image: SourceImage) => void) => {
+    if (signal.aborted) image.release();
     else report(image);
   };
 
@@ -73,7 +72,7 @@ export async function loadPhoto(
     const bitmap = await createImageBitmap(file);
     const exif = await exifPromise;
     if (!signal.aborted) callbacks.onInfo({ ...exif, width: bitmap.width, height: bitmap.height });
-    const image = await tiledImageFromBitmap(bitmap, 0, displaySpace);
+    const image = await renderedSourceFromBitmap(bitmap, 0, false);
     deliver(image, (img) => callbacks.onFull(img, performance.now() - started));
     return;
   }
@@ -84,14 +83,7 @@ export async function loadPhoto(
       exifPromise,
     ]);
     if (!signal.aborted) callbacks.onInfo({ ...exif, width: result.width, height: result.height });
-    const image = await tiledImageFromBuffers(
-      result.width,
-      result.height,
-      result.tiles,
-      result.colorSpace,
-      0,
-      displaySpace,
-    );
+    const image = await renderedSourceFromTiles(result.width, result.height, result.tiles);
     deliver(image, (img) => callbacks.onFull(img, performance.now() - started));
     return;
   }
@@ -107,7 +99,7 @@ export async function loadPhoto(
     if (raw.preview) {
       try {
         const bitmap = await createImageBitmap(raw.preview);
-        const preview = await tiledImageFromBitmap(bitmap, raw.previewRotation, displaySpace);
+        const preview = await renderedSourceFromBitmap(bitmap, raw.previewRotation, true);
         deliver(preview, callbacks.onPreview);
       } catch {
         // A broken preview is not fatal; continue with the full decode.
@@ -122,15 +114,13 @@ export async function loadPhoto(
       width: decoded.width,
       height: decoded.height,
       data: decoded.data,
-      target: displaySpace,
     });
-    const image = await tiledImageFromBuffers(
+    const image = linearSource(
       converted.width,
       converted.height,
       converted.tiles,
-      converted.colorSpace,
+      converted.overview,
       fullRotation(raw.previewRotation, raw.info, converted.width),
-      displaySpace,
     );
     deliver(image, (img) => callbacks.onFull(img, performance.now() - started));
   } finally {

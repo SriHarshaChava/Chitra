@@ -121,6 +121,11 @@ export function rec2020To(target: DisplayColorSpace): Matrix3 {
   return multiply(invert(rgbToXyzMatrix(PRIMARIES[target])), rgbToXyzMatrix(PRIMARIES.rec2020));
 }
 
+/** Matrix converting linear RGB of a display space to linear Rec.2020. */
+export function rec2020From(source: DisplayColorSpace): Matrix3 {
+  return invert(rec2020To(source));
+}
+
 /** sRGB / Display P3 encoding curve: linear light (0..1) → encoded signal (0..1). */
 export function encodeSrgb(linear: number): number {
   if (linear <= 0) return 0;
@@ -134,9 +139,6 @@ export function decodeSrgb(encoded: number): number {
   if (encoded >= 1) return 1;
   return encoded <= 0.04045 ? encoded / 12.92 : Math.pow((encoded + 0.055) / 1.055, 2.4);
 }
-
-/** Size of the lookup table that replaces `encodeSrgb` in per-pixel loops. */
-export const ENCODE_LUT_SIZE = 16384;
 
 /**
  * Strength of Chitra's default contrast curve (0 = none, 1 = strong).
@@ -156,17 +158,4 @@ export function baseCurve(encoded: number, strength = BASE_CONTRAST): number {
   const v = Math.min(1, Math.max(0, encoded));
   const s = v * v * (3 - 2 * v); // smoothstep: the classic S shape
   return v + strength * (s - v);
-}
-
-/**
- * Lookup table from linear light to final 8-bit display values: sRGB encoding followed
- * by the base contrast curve. Calling `Math.pow` 72 million times for a 24 MP photo
- * would be slow; a table lookup is much faster. 16384 steps keeps deep shadows smooth.
- */
-export function buildEncodeLut(contrast = BASE_CONTRAST): Uint8Array {
-  const lut = new Uint8Array(ENCODE_LUT_SIZE);
-  for (let i = 0; i < ENCODE_LUT_SIZE; i++) {
-    lut[i] = Math.round(baseCurve(encodeSrgb(i / (ENCODE_LUT_SIZE - 1)), contrast) * 255);
-  }
-  return lut;
 }

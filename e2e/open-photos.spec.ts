@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { existsSync } from 'node:fs';
+import { litPixels, setSlider } from './helpers';
 
 const NEF = 'samples/iss030e122639.NEF';
 
@@ -21,14 +22,13 @@ test('opens a Nikon NEF: preview first, then the developed RAW', async ({ page }
   await expect(develop).toContainText('4284 × 2844');
 
   // The canvas shows real pixels, not an empty frame.
-  const lit = await page.locator('canvas.viewer-canvas').evaluate((canvas: HTMLCanvasElement) => {
-    const ctx = canvas.getContext('2d')!;
-    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    let count = 0;
-    for (let i = 0; i < data.length; i += 4 * 101) if (data[i + 3]! > 0) count++;
-    return count;
-  });
-  expect(lit).toBeGreaterThan(1000);
+  expect(await litPixels(page)).toBeGreaterThan(1000);
+
+  // The developed RAW can be edited.
+  const exposure = page.locator('#slider-exposure');
+  await expect(exposure).toBeEnabled();
+  await setSlider(exposure, 1.5);
+  await expect(page.locator('output[for=slider-exposure]')).toHaveText('+1.50');
 
   // Zoom controls.
   await page.getByRole('button', { name: 'Zoom to 100 percent' }).click();
