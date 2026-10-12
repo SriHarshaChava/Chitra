@@ -4,7 +4,7 @@
  */
 import { decoderFor } from '../decode/fileTypes';
 import { openRaw } from '../decode/raw';
-import type { Rotation } from '../render/tiledImage';
+import type { Rotation } from '../render/sourceImage';
 
 export const THUMBNAIL_SIZE = 320;
 

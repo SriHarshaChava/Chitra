@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BASE_CONTRAST } from './color/colorSpaces';
 import { DevelopPanel } from './components/DevelopPanel';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
 import { LibraryPanel } from './components/LibraryPanel';
 import { TopBar } from './components/TopBar';
 import { Viewer } from './components/Viewer';
 import { ACCEPTED_FILE_TYPES } from './decode/fileTypes';
+import { developParams } from './develop/developMath';
+import { DEFAULT_RECIPE } from './develop/recipe';
+import { photoKey } from './develop/recipeStore';
+import { useDevelop } from './develop/useDevelop';
+import type { Histogram } from './render/histogram';
 import type { Capability } from './platform/capabilities';
 import { usePhotoSession } from './photos/usePhotoSession';
 
@@ -24,22 +30,61 @@ export function App({ detectCapabilities }: AppProps) {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [dragging, setDragging] = useState(false);
   const closeDiagnostics = useCallback(() => setShowDiagnostics(false), []);
+  const [showingBefore, setShowingBefore] = useState(false);
+  const [histogram, setHistogram] = useState<Histogram>();
   const fileInput = useRef<HTMLInputElement>(null);
   const session = usePhotoSession();
 
-  const openFiles = useCallback(() => fileInput.current?.click(), []);
+  const file = session.selected?.file;
+  const develop = useDevelop(file ? photoKey(file) : null);
+  const current = session.current;
+  const source = current?.image;
 
-  // Left/right arrow keys move between opened photos.
+  // Why the sliders are unavailable, if they are.
+  const disabledReason = !current
+    ? 'Open a photo to start editing.'
+    : current.isPreview
+      ? 'Showing the camera preview — editing starts when the RAW is developed.'
+      : current.status !== 'ready'
+        ? 'Loading…'
+        : undefined;
+
+  // RAW files get the default contrast curve; JPEGs and TIFFs are already finished images.
+  const baseContrast = source?.kind === 'linear' ? BASE_CONTRAST : 0;
+  const settings = useMemo(() => {
+    if (!source || source.isPreview) return null;
+    return developParams(showingBefore ? DEFAULT_RECIPE : develop.recipe, baseContrast);
+  }, [source, showingBefore, develop.recipe, baseContrast]);
+
+  const openFiles = useCallback(() => fileInput.current?.click(), []);
+  const toggleBefore = useCallback(() => setShowingBefore((v) => !v), []);
+
+  // Keyboard shortcuts.
   const { selectRelative } = session;
+  const { undo, redo } = develop;
+  const editable = !disabledReason;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.metaKey || event.ctrlKey) return;
+      const command = event.metaKey || event.ctrlKey;
+      if (command && editable && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (command && editable && event.key.toLowerCase() === 'y') {
+        event.preventDefault();
+        redo();
+        return;
+      }
+      if (event.target instanceof HTMLInputElement || command) return;
       if (event.key === 'ArrowRight') selectRelative(1);
       if (event.key === 'ArrowLeft') selectRelative(-1);
+      if (event.key === '\\' && editable) setShowingBefore((v) => !v);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectRelative]);
+  }, [selectRelative, undo, redo, editable]);
 
   const layoutClass = [
     'workspace',
@@ -48,8 +93,6 @@ export function App({ detectCapabilities }: AppProps) {
   ]
     .filter(Boolean)
     .join(' ');
-
-  const file = session.selected?.file;
 
   return (
     <div
@@ -86,13 +129,26 @@ export function App({ detectCapabilities }: AppProps) {
           />
         )}
         <Viewer
-          current={session.current}
+          current={current}
           fileName={file?.name}
           fileSize={file?.size}
+          settings={settings}
+          showingBefore={showingBefore && editable}
           onOpenFiles={openFiles}
+          onHistogram={setHistogram}
+          onGpuReset={session.reload}
         />
         {showDevelop && (
-          <DevelopPanel current={session.current} fileName={file?.name} fileSize={file?.size} />
+          <DevelopPanel
+            histogram={current ? histogram : undefined}
+            info={current?.info}
+            fileName={file?.name}
+            fileSize={file?.size}
+            develop={develop}
+            disabledReason={disabledReason}
+            showingBefore={showingBefore}
+            onToggleBefore={toggleBefore}
+          />
         )}
       </div>
 

@@ -1,81 +1,173 @@
 /**
- * The right-hand panel: histogram, photo info, and (from Phase 2) the adjustments.
+ * The right-hand panel: histogram, photo info, and the Basic adjustments.
  *
- * The sliders are still placeholders showing the planned layout. In Phase 2 each one
- * will update the photo's edit recipe.
+ * Dragging a slider updates the photo live; releasing it records one undo step.
+ * Double-click (or double-tap) a slider's name to reset just that slider.
  */
-import type { CurrentPhoto } from '../photos/usePhotoSession';
+import type { PhotoInfo } from '../decode/photoInfo';
+import {
+  DEFAULT_RECIPE,
+  isDefaultRecipe,
+  SLIDER_SECTIONS,
+  type Recipe,
+  type SliderSpec,
+} from '../develop/recipe';
+import type { Histogram } from '../render/histogram';
 import { HistogramView } from './HistogramView';
 import { InfoPanel } from './InfoPanel';
 
-interface SliderSpec {
-  label: string;
-  min: number;
-  max: number;
+export interface DevelopControls {
+  recipe: Recipe;
+  preview: (recipe: Recipe) => void;
+  commit: (recipe: Recipe) => void;
+  undo: () => void;
+  redo: () => void;
+  reset: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
-
-interface SectionSpec {
-  title: string;
-  sliders: SliderSpec[];
-}
-
-const SECTIONS: SectionSpec[] = [
-  {
-    title: 'White balance',
-    sliders: [
-      { label: 'Temperature', min: -100, max: 100 },
-      { label: 'Tint', min: -100, max: 100 },
-    ],
-  },
-  {
-    title: 'Tone',
-    sliders: [
-      { label: 'Exposure', min: -5, max: 5 },
-      { label: 'Contrast', min: -100, max: 100 },
-      { label: 'Highlights', min: -100, max: 100 },
-      { label: 'Shadows', min: -100, max: 100 },
-      { label: 'Whites', min: -100, max: 100 },
-      { label: 'Blacks', min: -100, max: 100 },
-    ],
-  },
-  {
-    title: 'Presence',
-    sliders: [
-      { label: 'Vibrance', min: -100, max: 100 },
-      { label: 'Saturation', min: -100, max: 100 },
-    ],
-  },
-];
 
 interface DevelopPanelProps {
-  current: CurrentPhoto | null;
+  histogram?: Histogram;
+  info?: PhotoInfo;
   fileName?: string;
   fileSize?: number;
+  develop: DevelopControls;
+  /** Why editing is unavailable right now, if it is. */
+  disabledReason?: string;
+  showingBefore: boolean;
+  onToggleBefore: () => void;
 }
 
-export function DevelopPanel({ current, fileName, fileSize }: DevelopPanelProps) {
+export function DevelopPanel({
+  histogram,
+  info,
+  fileName,
+  fileSize,
+  develop,
+  disabledReason,
+  showingBefore,
+  onToggleBefore,
+}: DevelopPanelProps) {
+  const disabled = Boolean(disabledReason);
   return (
     <aside className="panel panel-right" aria-label="Develop">
-      <HistogramView histogram={current?.image?.histogram} />
+      <HistogramView histogram={histogram} />
 
       <section className="panel-section">
         <h2 className="section-title">Info</h2>
-        <InfoPanel info={current?.info} fileName={fileName} fileSize={fileSize} />
+        <InfoPanel info={info} fileName={fileName} fileSize={fileSize} />
       </section>
 
-      <h2 className="panel-title panel-title-spaced">Develop</h2>
-      <p className="panel-note">Adjustments arrive in Phase 2.</p>
-      {SECTIONS.map((section) => (
+      <div className="develop-header">
+        <h2 className="panel-title">Develop</h2>
+        <div className="develop-actions">
+          <button
+            type="button"
+            className="small-button"
+            onClick={develop.undo}
+            disabled={disabled || !develop.canUndo}
+            aria-label="Undo"
+            title="Undo (Ctrl/⌘ Z)"
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            className="small-button"
+            onClick={develop.redo}
+            disabled={disabled || !develop.canRedo}
+            aria-label="Redo"
+            title="Redo (Ctrl/⌘ Shift Z)"
+          >
+            ↷
+          </button>
+          <button
+            type="button"
+            className={`small-button${showingBefore ? ' small-button-active' : ''}`}
+            onClick={onToggleBefore}
+            disabled={disabled}
+            aria-pressed={showingBefore}
+            title="Compare with the original settings (\\)"
+          >
+            Before
+          </button>
+          <button
+            type="button"
+            className="small-button"
+            onClick={develop.reset}
+            disabled={disabled || isDefaultRecipe(develop.recipe)}
+            title="Reset all adjustments"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+      {disabledReason && <p className="panel-note">{disabledReason}</p>}
+
+      {SLIDER_SECTIONS.map((section) => (
         <section key={section.title} className="panel-section">
           <h3 className="section-title">{section.title}</h3>
-          {section.sliders.map((slider) => (
-            <label key={slider.label} className="slider">
-              <span className="slider-label">{slider.label}</span>
-              <input type="range" min={slider.min} max={slider.max} defaultValue={0} disabled />
-            </label>
+          {section.sliders.map((spec) => (
+            <Slider
+              key={spec.key}
+              spec={spec}
+              recipe={develop.recipe}
+              disabled={disabled}
+              onPreview={develop.preview}
+              onCommit={develop.commit}
+            />
           ))}
         </section>
       ))}
     </aside>
+  );
+}
+
+interface SliderProps {
+  spec: SliderSpec;
+  recipe: Recipe;
+  disabled: boolean;
+  onPreview: (recipe: Recipe) => void;
+  onCommit: (recipe: Recipe) => void;
+}
+
+function Slider({ spec, recipe, disabled, onPreview, onCommit }: SliderProps) {
+  const value = recipe[spec.key];
+  const id = `slider-${spec.key}`;
+  // By the time the pointer or key is released, React has re-rendered with the
+  // dragged value, so `recipe` is exactly what is on screen.
+  const commitLatest = () => onCommit(recipe);
+  const resetThis = () => onCommit({ ...recipe, [spec.key]: DEFAULT_RECIPE[spec.key] });
+
+  return (
+    <div className={`slider${value !== DEFAULT_RECIPE[spec.key] ? ' slider-changed' : ''}`}>
+      <label
+        htmlFor={id}
+        className="slider-label"
+        onDoubleClick={disabled ? undefined : resetThis}
+        title="Double-click to reset"
+      >
+        {spec.label}
+      </label>
+      <output htmlFor={id} className="slider-value">
+        {spec.format(value)}
+      </output>
+      <input
+        id={id}
+        type="range"
+        min={spec.min}
+        max={spec.max}
+        step={spec.step}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => {
+          onPreview({ ...recipe, [spec.key]: Number(event.target.value) });
+        }}
+        onPointerUp={commitLatest}
+        onKeyUp={commitLatest}
+        onBlur={commitLatest}
+      />
+    </div>
   );
 }

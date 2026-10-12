@@ -2,6 +2,7 @@
 import type { ConvertRequest, ConvertResponse } from './convertMessages';
 
 type Success = Extract<ConvertResponse, { ok: true }>;
+type SuccessFor<T extends ConvertRequest['type']> = Extract<Success, { type: T }>;
 
 // Distributes `Omit` over each request variant so their fields stay distinct.
 type RequestWithoutId = ConvertRequest extends infer R
@@ -36,12 +37,14 @@ function getWorker(): Worker {
   return worker;
 }
 
-export function convertInWorker(request: RequestWithoutId): Promise<Success> {
+export function convertInWorker<R extends RequestWithoutId>(
+  request: R,
+): Promise<SuccessFor<R['type']>> {
   const id = nextId++;
   const message = { ...request, id } as ConvertRequest;
   const transfer = message.type === 'tiff' ? [message.bytes] : [message.data.buffer];
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
+    pending.set(id, { resolve: resolve as (r: Success) => void, reject });
     getWorker().postMessage(message, transfer);
   });
 }

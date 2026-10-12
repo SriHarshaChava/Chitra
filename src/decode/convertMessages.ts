@@ -1,6 +1,5 @@
 /** Messages exchanged with `convert.worker.ts`. */
-import type { DisplayColorSpace } from '../color/colorSpaces';
-import type { TileRect } from '../render/tiles';
+import type { Rect } from '../render/tiles';
 
 export type ConvertRequest =
   | {
@@ -8,9 +7,8 @@ export type ConvertRequest =
       id: number;
       width: number;
       height: number;
-      /** Linear Rec.2020 RGB, 3 values per pixel. */
+      /** Linear Rec.2020 RGB from LibRaw, 3 values per pixel (0..65535). */
       data: Uint16Array;
-      target: DisplayColorSpace;
     }
   | {
       type: 'tiff';
@@ -18,8 +16,23 @@ export type ConvertRequest =
       bytes: ArrayBuffer;
     };
 
-export interface TileBuffer {
-  rect: TileRect;
+/** One resolution level of an RGB half-float image (3 values per pixel). */
+export interface HalfLevel {
+  width: number;
+  height: number;
+  data: Uint16Array;
+}
+
+export interface HalfTile {
+  core: Rect;
+  padded: Rect;
+  /** Full resolution, then half resolution (for smooth zoomed-out drawing). */
+  levels: HalfLevel[];
+}
+
+export interface RgbaTile {
+  core: Rect;
+  padded: Rect;
   data: Uint8ClampedArray<ArrayBuffer>;
 }
 
@@ -27,9 +40,19 @@ export type ConvertResponse =
   | {
       id: number;
       ok: true;
+      type: 'linear-rec2020';
       width: number;
       height: number;
-      colorSpace: DisplayColorSpace;
-      tiles: TileBuffer[];
+      tiles: HalfTile[];
+      /** Downscaled copy of the whole photo, largest level first. */
+      overview: HalfLevel[];
+    }
+  | {
+      id: number;
+      ok: true;
+      type: 'tiff';
+      width: number;
+      height: number;
+      tiles: RgbaTile[];
     }
   | { id: number; ok: false; error: string };
