@@ -1,22 +1,33 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { Matrix3 } from '../color/colorSpaces';
 import { formatFileSize } from '../decode/photoInfo';
-import type { CurrentPhoto } from '../photos/usePhotoSession';
+import {
+  aspectRatio,
+  frameSize,
+  imageToCropMatrix,
+  imageToFrameMatrix,
+  toPixels,
+  type Geometry,
+} from '../develop/geometry';
 import { DevelopRenderer, type GpuImage, type RenderSettings } from '../gpu/renderer';
+import type { CurrentPhoto } from '../photos/usePhotoSession';
 import { displayColorSpace } from '../render/displayColor';
 import type { Histogram } from '../render/histogram';
 import type { SourceImage } from '../render/sourceImage';
+import type { Rect } from '../render/tiles';
 import {
   constrainView,
+  FIT_PADDING,
   fitView,
   MAX_SCALE,
   minScale,
-  orientedSize,
   panBy,
   zoomAt,
   zoomTo,
   type Size,
   type View,
 } from '../render/viewTransform';
+import { CropOverlay } from './CropOverlay';
 
 interface ViewerProps {
   current: CurrentPhoto | null;
@@ -26,6 +37,15 @@ interface ViewerProps {
   settings: RenderSettings;
   /** Shown as a badge while comparing with the original. */
   showingBefore?: boolean;
+  /** Crop, straighten, rotate and flip. */
+  geometry: Geometry;
+  /** True while the crop tool is open: the whole photo is shown with a crop frame. */
+  cropMode: boolean;
+  onGeometryPreview: (geometry: Geometry) => void;
+  onGeometryCommit: (geometry: Geometry) => void;
+  onToggleCrop: () => void;
+  /** Whether the crop tool can be used right now. */
+  canCrop: boolean;
   onOpenFiles: () => void;
   onHistogram: (histogram: Histogram | undefined) => void;
   /** The GPU was reset (e.g. iPad backgrounding); the photo must be decoded again. */
@@ -34,6 +54,47 @@ interface ViewerProps {
 
 /** Wait this long after the last change before recomputing the histogram. */
 const HISTOGRAM_DELAY_MS = 120;
+/** Extra room around the photo in crop mode, so the corner handles are easy to grab. */
+const CROP_PADDING_CSS = 40;
+
+/** How the photo maps to the screen for the current geometry and mode. */
+interface Layout {
+  /** Image pixel → display pixel. */
+  imageToDisplay: Matrix3;
+  /** Size of what is shown (the crop, or the whole frame in crop mode). */
+  display: Size;
+  /** Visible part of the display (the crop), or everything in crop mode. */
+  visible: Rect | null;
+  /** Image pixel → cropped photo pixel (for the histogram). */
+  imageToCrop: Matrix3;
+  crop: Size;
+  frame: Size;
+}
+
+function computeLayout(image: SourceImage, g: Geometry, cropMode: boolean): Layout {
+  const frame = frameSize(frameSize(image, image.rotation), g.rotate);
+  const cropRect = toPixels(g.crop, frame);
+  const crop = { width: cropRect.width, height: cropRect.height };
+  const imageToCrop = imageToCropMatrix(image, g);
+  if (cropMode) {
+    return {
+      imageToDisplay: imageToFrameMatrix(image, g),
+      display: frame,
+      visible: null,
+      imageToCrop,
+      crop,
+      frame,
+    };
+  }
+  return {
+    imageToDisplay: imageToCrop,
+    display: crop,
+    visible: { x: 0, y: 0, ...crop },
+    imageToCrop,
+    crop,
+    frame,
+  };
+}
 
 /** A tap is a short press that barely moves; two taps close together toggle zoom. */
 const TAP_MAX_MOVE_CSS = 8;
@@ -46,6 +107,12 @@ export function Viewer({
   fileSize,
   settings,
   showingBefore,
+  geometry,
+  cropMode,
+  onGeometryPreview,
+  onGeometryCommit,
+  onToggleCrop,
+  canCrop,
   onOpenFiles,
   onHistogram,
   onGpuReset,
@@ -57,14 +124,22 @@ export function Viewer({
   const viewportRef = useRef<Size>({ width: 1, height: 1 });
   const frameRef = useRef(0);
   const [zoomPercent, setZoomPercent] = useState<number | null>(null);
+  /** The view, as state, for the crop overlay (which must re-render as it changes). */
+  const [cropView, setCropView] = useState<{ view: View; frame: Size } | null>(null);
 
   const [gpuError, setGpuError] = useState<string | null>(null);
 
   const image = current?.image;
   const photoId = current?.id;
-  /** Size and rotation of the photo on screen (used by the zoom maths). */
-  const imageRef = useRef<SourceImage | undefined>(image);
-  const photoIdRef = useRef<string | undefined>(photoId);
+  const layoutRef = useRef<Layout | null>(null);
+  const cropModeRef = useRef(cropMode);
+  /** What was shown last time, to decide whether to keep the zoom. */
+  const shownRef = useRef<{
+    photoId?: string;
+    image: SourceImage;
+    cropMode: boolean;
+    display: Size;
+  } | null>(null);
   const rendererRef = useRef<DevelopRenderer | null>(null);
   const gpuRef = useRef<{ source: SourceImage; gpu: GpuImage } | null>(null);
   const settingsRef = useRef<RenderSettings>(settings);
@@ -101,7 +176,15 @@ export function Viewer({
     frameRef.current = 0;
     const renderer = getRenderer();
     if (!renderer || renderer.gl.isContextLost()) return;
-    renderer.draw(gpuRef.current?.gpu ?? null, viewRef.current, settingsRef.current);
+    const layout = layoutRef.current;
+    const view = viewRef.current;
+    renderer.draw(
+      gpuRef.current?.gpu ?? null,
+      layout && view
+        ? { imageToDisplay: layout.imageToDisplay, view, visible: layout.visible }
+        : null,
+      settingsRef.current,
+    );
   }, [getRenderer]);
 
   const scheduleDraw = useCallback(() => {
@@ -113,8 +196,11 @@ export function Viewer({
     histogramTimer.current = window.setTimeout(() => {
       const renderer = rendererRef.current;
       const gpu = gpuRef.current?.gpu;
-      if (!renderer || !gpu || renderer.gl.isContextLost()) return;
-      callbacks.current.onHistogram(renderer.histogram(gpu, settingsRef.current));
+      const layout = layoutRef.current;
+      if (!renderer || !gpu || !layout || renderer.gl.isContextLost()) return;
+      callbacks.current.onHistogram(
+        renderer.histogram(gpu, layout.imageToCrop, layout.crop, settingsRef.current),
+      );
     }, HISTOGRAM_DELAY_MS);
   }, []);
 
@@ -127,34 +213,38 @@ export function Viewer({
 
   const setView = useCallback(
     (next: View, fit = false) => {
-      const img = imageRef.current;
-      if (!img) return;
-      const size = orientedSize(img, img.rotation);
-      viewRef.current = constrainView(next, size, viewportRef.current);
+      const layout = layoutRef.current;
+      if (!layout) return;
+      // In crop mode the straightened photo may extend past the frame, so don't clamp.
+      viewRef.current = cropModeRef.current
+        ? next
+        : constrainView(next, layout.display, viewportRef.current);
       fitModeRef.current = fit;
       setZoomPercent(Math.round(viewRef.current.scale * 100));
+      setCropView(cropModeRef.current ? { view: viewRef.current, frame: layout.frame } : null);
       scheduleDraw();
     },
     [scheduleDraw],
   );
 
   const fit = useCallback(() => {
-    const img = imageRef.current;
-    if (img) setView(fitView(orientedSize(img, img.rotation), viewportRef.current), true);
+    const layout = layoutRef.current;
+    if (!layout) return;
+    const padding = cropModeRef.current
+      ? CROP_PADDING_CSS * (window.devicePixelRatio || 1)
+      : FIT_PADDING;
+    setView(fitView(layout.display, viewportRef.current, padding), true);
   }, [setView]);
 
   const zoomLimits = useCallback(() => {
-    const img = imageRef.current!;
-    return { min: minScale(orientedSize(img, img.rotation), viewportRef.current), max: MAX_SCALE };
+    const layout = layoutRef.current!;
+    return { min: minScale(layout.display, viewportRef.current), max: MAX_SCALE };
   }, []);
 
-  // A new image arrives: keep the zoom if it is the same photo at a different resolution
-  // (embedded preview → developed RAW), otherwise fit it to the screen.
+  // A new image, crop or mode: keep the zoom when it is the same photo at a different
+  // resolution (camera preview → developed RAW); otherwise fit it to the screen.
   useLayoutEffect(() => {
-    const previous = imageRef.current;
-    const samePhoto = photoIdRef.current === photoId;
-    imageRef.current = image;
-    photoIdRef.current = photoId;
+    cropModeRef.current = cropMode;
 
     // Move the new pixels to the GPU (once per image), then free the CPU copy.
     const renderer = getRenderer();
@@ -175,20 +265,48 @@ export function Viewer({
 
     if (!image) {
       viewRef.current = null;
+      layoutRef.current = null;
+      shownRef.current = null;
       callbacks.current.onHistogram(undefined);
       scheduleDraw();
       return;
     }
+
+    const layout = computeLayout(image, geometry, cropMode);
+    layoutRef.current = layout;
     scheduleHistogram();
+
+    const shown = shownRef.current;
     const view = viewRef.current;
-    if (samePhoto && previous && view && !fitModeRef.current && previous !== image) {
-      const ratio =
-        orientedSize(previous, previous.rotation).width / orientedSize(image, image.rotation).width;
-      setView({ ...view, scale: view.scale * ratio });
+    shownRef.current = { photoId, image, cropMode, display: layout.display };
+    const keepZoom =
+      shown &&
+      view &&
+      !fitModeRef.current &&
+      shown.photoId === photoId &&
+      shown.cropMode === cropMode;
+    if (keepZoom && shown.image !== image) {
+      setView({ ...view, scale: (view.scale * shown.display.width) / layout.display.width });
+    } else if (
+      keepZoom &&
+      shown.display.width === layout.display.width &&
+      shown.display.height === layout.display.height
+    ) {
+      setView(view);
     } else {
       fit();
     }
-  }, [image, photoId, fit, setView, scheduleDraw, scheduleHistogram, getRenderer]);
+  }, [
+    image,
+    photoId,
+    geometry,
+    cropMode,
+    fit,
+    setView,
+    scheduleDraw,
+    scheduleHistogram,
+    getRenderer,
+  ]);
 
   // Keep the canvas matched to its container size, in device pixels.
   useEffect(() => {
@@ -202,7 +320,7 @@ export function Viewer({
       canvas.width = width;
       canvas.height = height;
       viewportRef.current = { width, height };
-      if (!imageRef.current) return scheduleDraw();
+      if (!layoutRef.current) return scheduleDraw();
       if (fitModeRef.current || !viewRef.current) fit();
       else setView(viewRef.current);
     });
@@ -266,7 +384,7 @@ export function Viewer({
   };
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!imageRef.current) return;
+    if (!layoutRef.current || cropModeRef.current) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     pointers.current.set(event.pointerId, toDevice(event));
     if (pointers.current.size === 1) {
@@ -349,7 +467,7 @@ export function Viewer({
     if (!canvas) return;
     const onWheel = (event: WheelEvent) => {
       const view = viewRef.current;
-      if (!view || !imageRef.current) return;
+      if (!view || !layoutRef.current || cropModeRef.current) return;
       event.preventDefault();
       const lineHeight = event.deltaMode === 1 ? 16 : 1;
       const sensitivity = event.ctrlKey ? 0.01 : 0.0015; // ctrlKey = trackpad pinch
@@ -390,6 +508,21 @@ export function Viewer({
         />
       </div>
 
+      {cropMode && cropView && (
+        <CropOverlay
+          frame={cropView.frame}
+          view={cropView.view}
+          geometry={geometry}
+          ratio={aspectRatio(
+            geometry.aspect,
+            toPixels(geometry.crop, cropView.frame),
+            cropView.frame,
+          )}
+          onPreview={onGeometryPreview}
+          onCommit={onGeometryCommit}
+        />
+      )}
+
       {!current && <EmptyState onOpenFiles={onOpenFiles} />}
       {current && !image && current.status !== 'error' && (
         <div className="viewer-overlay-center">
@@ -428,37 +561,56 @@ export function Viewer({
               </>
             )}
           </div>
-          <div className="viewer-toolbar" role="toolbar" aria-label="Zoom">
-            <button type="button" className="tool-button" onClick={fit} aria-label="Fit to screen">
-              Fit
-            </button>
+          <div className="viewer-toolbar" role="toolbar" aria-label="View tools">
             <button
               type="button"
-              className="tool-button"
-              onClick={actualPixels}
-              aria-label="Zoom to 100 percent"
+              className={`tool-button${cropMode ? ' tool-button-active' : ''}`}
+              onClick={onToggleCrop}
+              disabled={!canCrop}
+              aria-pressed={cropMode}
+              title="Crop and straighten (R)"
             >
-              1:1
+              {cropMode ? 'Done' : 'Crop'}
             </button>
-            <button
-              type="button"
-              className="tool-button"
-              onClick={() => zoomStep(1 / 1.5)}
-              aria-label="Zoom out"
-            >
-              −
-            </button>
-            <span className="zoom-label" aria-label="Zoom level">
-              {zoomPercent ?? '–'}%
-            </span>
-            <button
-              type="button"
-              className="tool-button"
-              onClick={() => zoomStep(1.5)}
-              aria-label="Zoom in"
-            >
-              +
-            </button>
+            {!cropMode && (
+              <>
+                <button
+                  type="button"
+                  className="tool-button"
+                  onClick={fit}
+                  aria-label="Fit to screen"
+                >
+                  Fit
+                </button>
+                <button
+                  type="button"
+                  className="tool-button"
+                  onClick={actualPixels}
+                  aria-label="Zoom to 100 percent"
+                >
+                  1:1
+                </button>
+                <button
+                  type="button"
+                  className="tool-button"
+                  onClick={() => zoomStep(1 / 1.5)}
+                  aria-label="Zoom out"
+                >
+                  −
+                </button>
+                <span className="zoom-label" aria-label="Zoom level">
+                  {zoomPercent ?? '–'}%
+                </span>
+                <button
+                  type="button"
+                  className="tool-button"
+                  onClick={() => zoomStep(1.5)}
+                  aria-label="Zoom in"
+                >
+                  +
+                </button>
+              </>
+            )}
           </div>
         </>
       )}

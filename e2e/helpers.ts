@@ -29,13 +29,18 @@ export function litPixels(page: Page): Promise<number> {
   });
 }
 
-/** Moves a slider like a user would: live input events, then release. */
-export async function setSlider(slider: Locator, value: number) {
-  await slider.evaluate((input: HTMLInputElement, v: number) => {
-    // React tracks the value property, so use the native setter to simulate typing.
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
-    setter.call(input, String(v));
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-  }, value);
+/**
+ * Moves a slider like a user would: one drag passing through `values` (live input
+ * events), then release.
+ */
+export async function setSlider(slider: Locator, ...values: number[]) {
+  for (const value of values) {
+    await slider.evaluate((input: HTMLInputElement, v: number) => {
+      // React tracks the value property, so use the native setter to simulate dragging.
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, String(v));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }, value);
+  }
+  await slider.dispatchEvent('pointerup');
 }

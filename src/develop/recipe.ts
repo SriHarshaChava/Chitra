@@ -5,7 +5,10 @@
  * original + recipe, so edits can be undone, reset or copied at any time.
  */
 
-export const RECIPE_VERSION = 1;
+import { DEFAULT_GEOMETRY, isDefaultGeometry, sanitizeGeometry, type Geometry } from './geometry';
+
+/** Version 2 added `geometry` (crop, straighten, rotate, flip). */
+export const RECIPE_VERSION = 2;
 
 export interface Recipe {
   version: typeof RECIPE_VERSION;
@@ -22,9 +25,11 @@ export interface Recipe {
   blacks: number;
   vibrance: number;
   saturation: number;
+  geometry: Geometry;
 }
 
-export type AdjustmentKey = Exclude<keyof Recipe, 'version'>;
+/** Keys of the numeric slider adjustments. */
+export type AdjustmentKey = Exclude<keyof Recipe, 'version' | 'geometry'>;
 
 export const DEFAULT_RECIPE: Recipe = Object.freeze({
   version: RECIPE_VERSION,
@@ -38,6 +43,7 @@ export const DEFAULT_RECIPE: Recipe = Object.freeze({
   blacks: 0,
   vibrance: 0,
   saturation: 0,
+  geometry: DEFAULT_GEOMETRY,
 });
 
 export interface SliderSpec {
@@ -92,13 +98,20 @@ export const SLIDER_SECTIONS: SliderSection[] = [
 export const ALL_SLIDERS: SliderSpec[] = SLIDER_SECTIONS.flatMap((s) => s.sliders);
 
 export function isDefaultRecipe(recipe: Recipe): boolean {
-  return ALL_SLIDERS.every(({ key }) => recipe[key] === DEFAULT_RECIPE[key]);
+  return (
+    ALL_SLIDERS.every(({ key }) => recipe[key] === DEFAULT_RECIPE[key]) &&
+    isDefaultGeometry(recipe.geometry)
+  );
+}
+
+export function sameRecipe(a: Recipe, b: Recipe): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /**
  * Turns untrusted data (e.g. from storage or an imported file) into a valid recipe:
  * unknown fields are dropped, missing or invalid values become defaults, and values
- * are clamped to each slider's range.
+ * are clamped to each slider's range. Version 1 recipes (no geometry) still load.
  */
 export function sanitizeRecipe(data: unknown): Recipe {
   const source = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
@@ -109,5 +122,6 @@ export function sanitizeRecipe(data: unknown): Recipe {
       recipe[key] = Math.min(max, Math.max(min, value));
     }
   }
+  recipe.geometry = sanitizeGeometry(source.geometry);
   return recipe;
 }

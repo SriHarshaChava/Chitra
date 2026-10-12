@@ -4,6 +4,7 @@
  * Dragging a slider updates the photo live; releasing it records one undo step.
  * Double-click (or double-tap) a slider's name to reset just that slider.
  */
+import type { ReactNode } from 'react';
 import type { PhotoInfo } from '../decode/photoInfo';
 import {
   DEFAULT_RECIPE,
@@ -37,6 +38,10 @@ interface DevelopPanelProps {
   disabledReason?: string;
   showingBefore: boolean;
   onToggleBefore: () => void;
+  /** Size of the cropped photo, when cropped. */
+  cropSize?: { width: number; height: number };
+  /** Shown instead of the sliders while the crop tool is open. */
+  cropPanel?: ReactNode;
 }
 
 export function DevelopPanel({
@@ -48,6 +53,8 @@ export function DevelopPanel({
   disabledReason,
   showingBefore,
   onToggleBefore,
+  cropSize,
+  cropPanel,
 }: DevelopPanelProps) {
   const disabled = Boolean(disabledReason);
   return (
@@ -56,7 +63,7 @@ export function DevelopPanel({
 
       <section className="panel-section">
         <h2 className="section-title">Info</h2>
-        <InfoPanel info={info} fileName={fileName} fileSize={fileSize} />
+        <InfoPanel info={info} fileName={fileName} fileSize={fileSize} cropSize={cropSize} />
       </section>
 
       <div className="develop-header">
@@ -105,21 +112,23 @@ export function DevelopPanel({
       </div>
       {disabledReason && <p className="panel-note">{disabledReason}</p>}
 
-      {SLIDER_SECTIONS.map((section) => (
-        <section key={section.title} className="panel-section">
-          <h3 className="section-title">{section.title}</h3>
-          {section.sliders.map((spec) => (
-            <Slider
-              key={spec.key}
-              spec={spec}
-              recipe={develop.recipe}
-              disabled={disabled}
-              onPreview={develop.preview}
-              onCommit={develop.commit}
-            />
-          ))}
-        </section>
-      ))}
+      {cropPanel}
+      {!cropPanel &&
+        SLIDER_SECTIONS.map((section) => (
+          <section key={section.title} className="panel-section">
+            <h3 className="section-title">{section.title}</h3>
+            {section.sliders.map((spec) => (
+              <Slider
+                key={spec.key}
+                spec={spec}
+                recipe={develop.recipe}
+                disabled={disabled}
+                onPreview={develop.preview}
+                onCommit={develop.commit}
+              />
+            ))}
+          </section>
+        ))}
     </aside>
   );
 }
