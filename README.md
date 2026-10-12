@@ -8,7 +8,16 @@ Chitra is a **website that runs entirely in your browser**. Photos are processed
 - **Works in:** Chrome or Edge on Windows, and Safari on iPad (iPadOS 26 or later recommended, for WebGPU).
 - **Focus:** Nikon RAW (NEF) editing. JPEG, PNG, TIFF and video support are planned.
 
-> **Status: Phase 0 (foundations).** The editor layout and system check are in place. Opening photos arrives in Phase 1. See [docs/PLAN.md](docs/PLAN.md).
+> **Status: Phase 1 (RAW viewer).** Open Nikon NEF, JPEG, PNG and TIFF files, zoom and pan, and see the histogram and shooting info. Editing arrives in Phase 2. See [docs/PLAN.md](docs/PLAN.md).
+
+## Using Chitra
+
+- **Open photos:** tap **Open photos…** or drag files onto the window. You can open several at once; they appear in the Library panel.
+- **On iPad:** in the file picker choose **Browse** (the Files app) rather than **Photo Library**, because the photo library may hand over a JPEG copy instead of the original NEF. Files copied from the camera's SD card (for example with Apple's SD card reader) are in Files.
+- **RAW files** first show the camera's built-in preview, then the fully developed RAW after a few seconds. The status bubble at the top tells you which one you are looking at.
+- **Zoom:** pinch, scroll wheel or trackpad pinch, or use the toolbar (**Fit**, **1:1** = 100 %, **−**, **+**). Double-tap or double-click toggles between fit and 100 %. Drag to move around.
+- **Next/previous photo:** ← and → keys.
+- Your original files are only read, never changed.
 
 ## Run it on your Windows PC
 
@@ -65,8 +74,14 @@ The **System check** button shows which features your browser supports. **Copy r
 ```
 src/
   App.tsx              App shell: top bar, panels, viewer
-  components/          UI pieces (panels, viewer, system check)
+  components/          UI pieces (viewer, library, histogram, info, system check)
+  color/               Colour-space maths (Rec.2020, Display P3, sRGB, tone curve)
+  decode/              File types, LibRaw RAW decoding, EXIF, background worker
+  render/              Tiles, zoom/pan maths, drawing, histogram
+  photos/              Loading photos and the list of opened photos
   platform/            Browser feature detection, storage, debug console
+e2e/                   Browser tests that open real photos
+scripts/               Helper scripts (downloading test photos)
 docs/
   PLAN.md              Roadmap and architecture
   decisions/           Short records of important technical decisions
@@ -79,4 +94,4 @@ Never commit personal photos. Keep test files in a `samples/` folder. Git ignore
 
 ## License
 
-Chitra is released under the [MIT license](LICENSE). Third-party libraries keep their own licenses; see [docs/PLAN.md](docs/PLAN.md#technology-and-licences).
+Chitra is released under the [MIT license](LICENSE). Third-party libraries keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

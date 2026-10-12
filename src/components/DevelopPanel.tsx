@@ -1,9 +1,12 @@
 /**
- * The Develop panel: where photo adjustments live.
+ * The right-hand panel: histogram, photo info, and (from Phase 2) the adjustments.
  *
- * In Phase 0 the sliders are placeholders that show the planned layout. They become
- * real in Phase 2, when each one will update the photo's edit recipe.
+ * The sliders are still placeholders showing the planned layout. In Phase 2 each one
+ * will update the photo's edit recipe.
  */
+import type { CurrentPhoto } from '../photos/usePhotoSession';
+import { HistogramView } from './HistogramView';
+import { InfoPanel } from './InfoPanel';
 
 interface SliderSpec {
   label: string;
@@ -44,10 +47,23 @@ const SECTIONS: SectionSpec[] = [
   },
 ];
 
-export function DevelopPanel() {
+interface DevelopPanelProps {
+  current: CurrentPhoto | null;
+  fileName?: string;
+  fileSize?: number;
+}
+
+export function DevelopPanel({ current, fileName, fileSize }: DevelopPanelProps) {
   return (
     <aside className="panel panel-right" aria-label="Develop">
-      <h2 className="panel-title">Develop</h2>
+      <HistogramView histogram={current?.image?.histogram} />
+
+      <section className="panel-section">
+        <h2 className="section-title">Info</h2>
+        <InfoPanel info={current?.info} fileName={fileName} fileSize={fileSize} />
+      </section>
+
+      <h2 className="panel-title panel-title-spaced">Develop</h2>
       <p className="panel-note">Adjustments arrive in Phase 2.</p>
       {SECTIONS.map((section) => (
         <section key={section.title} className="panel-section">

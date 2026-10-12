@@ -19,3 +19,17 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # Opens real photos (including a Nikon NEF) in Chromium to check the full pipeline.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run samples
+      - run: npm run e2e

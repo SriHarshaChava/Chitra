@@ -252,22 +252,49 @@ p {
 /* ---------- Viewer ---------- */
 
 .viewer {
+  position: relative;
   min-width: 0;
   min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
   background: #161616;
 }
 
-.viewer-empty {
-  max-width: 340px;
+.viewer-canvas-wrap {
+  position: absolute;
+  inset: 0;
+}
+
+.viewer-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* We handle pinch and pan ourselves, so stop the browser zooming the whole page. */
+  touch-action: none;
+  cursor: grab;
+}
+
+.viewer-canvas:active {
+  cursor: grabbing;
+}
+
+.viewer-overlay-center {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: 360px;
+  height: fit-content;
   padding: 24px;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.viewer-overlay-center .button {
+  pointer-events: auto;
+  margin-top: 6px;
 }
 
 .viewer-mark {
@@ -284,6 +311,231 @@ p {
 .viewer-title {
   font-size: 16px;
   font-weight: 600;
+}
+
+.viewer-status {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 20px);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 55%);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.viewer-toolbar {
+  position: absolute;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgb(30 30 30 / 85%);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.tool-button {
+  min-width: var(--touch);
+  min-height: 40px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.tool-button:hover {
+  background: var(--panel-raised);
+}
+
+.tool-button:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.zoom-label {
+  min-width: 56px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.spinner-small {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+}
+
+.drop-hint {
+  position: fixed;
+  inset: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: rgb(0 0 0 / 55%);
+  font-size: 18px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* ---------- Library list ---------- */
+
+.photo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.photo-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.photo-item:hover {
+  background: var(--panel-raised);
+}
+
+.photo-item-selected {
+  border-color: var(--accent);
+  background: var(--panel-raised);
+}
+
+.photo-thumb {
+  width: 56px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.photo-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.photo-thumb-placeholder {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.photo-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-warning {
+  font-size: 12px;
+  color: #e0b060;
+}
+
+/* ---------- Histogram and info ---------- */
+
+.histogram {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.histogram-canvas {
+  max-width: 100%;
+  border-radius: 4px;
+  background: #1b1b1b;
+}
+
+.histogram-clipping {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.info-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.info-row {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 8px;
+}
+
+.info-row dt {
+  color: var(--text-muted);
+}
+
+.info-row dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.panel-title-spaced {
+  margin-top: 8px;
 }
 
 /* ---------- Diagnostics modal ---------- */

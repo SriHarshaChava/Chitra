@@ -87,9 +87,11 @@ async function checkWebGPU(env: CapabilityEnv): Promise<Capability> {
     const adapter = await env.navigator.gpu.requestAdapter();
     if (!adapter) return { ...base, status: 'no', detail: 'API present but no GPU adapter' };
     const info = adapter.info;
-    const detail = [info?.vendor, info?.architecture, info?.description]
-      .filter(Boolean)
-      .join(' · ');
+    // Some browsers repeat the same word in each field (e.g. "apple"), so drop duplicates.
+    const parts = [info?.vendor, info?.architecture, info?.description].filter(
+      (part): part is string => Boolean(part),
+    );
+    const detail = [...new Set(parts)].join(' · ');
     return { ...base, status: 'yes', detail: detail || undefined };
   } catch (error) {
     return { ...base, status: 'no', detail: String(error) };

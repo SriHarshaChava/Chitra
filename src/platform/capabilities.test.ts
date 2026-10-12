@@ -64,6 +64,19 @@ describe('detectCapabilities', () => {
     expect(byId(caps, 'storage-quota').detail).toBe('5.0 MB used of 10.0 GB available');
   });
 
+  it('does not repeat identical GPU details', async () => {
+    const env = fakeEnv({
+      navigator: {
+        gpu: {
+          requestAdapter: async () => ({
+            info: { vendor: 'apple', architecture: 'apple', description: 'apple' },
+          }),
+        },
+      },
+    });
+    expect(byId(await detectCapabilities(env), 'webgpu').detail).toBe('apple');
+  });
+
   it('treats a WebGPU API without an adapter as unsupported', async () => {
     const env = fakeEnv({ navigator: { gpu: { requestAdapter: async () => null } } });
     const webgpu = byId(await detectCapabilities(env), 'webgpu');

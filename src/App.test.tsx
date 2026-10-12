@@ -1,6 +1,10 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+
+// Decoding needs real browser workers; these UI tests only check the interface.
+vi.mock('./photos/loadPhoto', () => ({ loadPhoto: () => new Promise(() => {}) }));
+vi.mock('./photos/thumbnail', () => ({ makeThumbnail: async () => null }));
 import type { Capability } from './platform/capabilities';
 
 const fakeCapabilities: Capability[] = [
@@ -13,9 +17,22 @@ const detect = async () => fakeCapabilities;
 afterEach(cleanup);
 
 describe('App', () => {
+  it('lists opened photos and skips unsupported files', async () => {
+    render(<App detectCapabilities={detect} />);
+    const input = screen.getByTestId('file-input');
+    const files = [new File(['x'], 'DSC_0001.NEF'), new File(['x'], 'notes.txt')];
+    fireEvent.change(input, { target: { files } });
+    const list = await screen.findByRole('list', { name: 'Opened photos' });
+    expect(list).toHaveTextContent('DSC_0001.NEF');
+    expect(list).not.toHaveTextContent('notes.txt');
+    expect(screen.getByText(/Opening DSC_0001.NEF/)).toBeInTheDocument();
+    expect(screen.getByText(/Skipped unsupported file: notes.txt/)).toBeInTheDocument();
+  });
+
   it('shows the editor shell', () => {
     render(<App detectCapabilities={detect} />);
     expect(screen.getByText('Chitra')).toBeInTheDocument();
+    expect(screen.getByText('No photo open')).toBeInTheDocument();
     expect(screen.getByRole('main', { name: 'Photo viewer' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Library' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Develop' })).toBeInTheDocument();
