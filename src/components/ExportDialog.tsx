@@ -1,6 +1,6 @@
 /**
- * Export dialog: choose format, picture size and colour space, then save the file.
- * The original is never changed; the export is a new file.
+ * Export dialog: choose format, picture size and colour space, then save the file(s).
+ * Works for one photo or many (batch). Originals are never changed.
  */
 import { useEffect, useState } from 'react';
 import { formatFileSize } from '../decode/photoInfo';
@@ -8,7 +8,6 @@ import type { Size } from '../develop/geometry';
 import {
   COLOR_SPACES,
   estimateBytes,
-  exportFileName,
   loadExportSettings,
   outputSize,
   saveExportSettings,
@@ -16,26 +15,41 @@ import {
   type ExportSettings,
   type SizeMode,
 } from '../export/exportSettings';
-import type { ExportResult } from '../export/runExport';
+
+/** What an export produced. */
+export interface ExportOutput {
+  /** The file to download: the photo, or a ZIP of several photos. */
+  file: File;
+  /** The individual photos (iPad "Share…" can save these straight to Photos). */
+  files: File[];
+  /** Photos that could not be exported. */
+  failed: string[];
+  width?: number;
+  height?: number;
+}
 
 interface ExportDialogProps {
-  fileName: string;
-  /** Size of the cropped photo at full resolution. */
-  fullSize: Size;
-  onExport: (settings: ExportSettings, onProgress: (f: number) => void) => Promise<ExportResult>;
+  /** How many photos are being exported. */
+  count: number;
+  /** Size of the cropped photo at full resolution, when exporting one photo. */
+  fullSize?: Size;
+  onExport: (
+    settings: ExportSettings,
+    onProgress: (fraction: number, current?: string) => void,
+  ) => Promise<ExportOutput>;
   onClose: () => void;
 }
 
 type Status =
   | { state: 'idle' }
-  | { state: 'working'; progress: number }
-  | { state: 'done'; file: File; url: string; width: number; height: number }
+  | { state: 'working'; progress: number; current?: string }
+  | { state: 'done'; output: ExportOutput; url: string }
   | { state: 'error'; message: string };
 
-export function ExportDialog({ fileName, fullSize, onExport, onClose }: ExportDialogProps) {
+export function ExportDialog({ count, fullSize, onExport, onClose }: ExportDialogProps) {
   const [settings, setSettings] = useState<ExportSettings>(loadExportSettings);
   const [status, setStatus] = useState<Status>({ state: 'idle' });
-  const size = outputSize(fullSize, settings);
+  const size = fullSize ? outputSize(fullSize, settings) : null;
   const mode = SIZE_MODES.find((m) => m.id === settings.sizeMode)!;
   const update = (change: Partial<ExportSettings>) => setSettings((s) => ({ ...s, ...change }));
 
@@ -58,16 +72,12 @@ export function ExportDialog({ fileName, fullSize, onExport, onClose }: ExportDi
     saveExportSettings(settings);
     setStatus({ state: 'working', progress: 0 });
     try {
-      const result = await onExport(settings, (progress) =>
-        setStatus({ state: 'working', progress }),
+      const output = await onExport(settings, (progress, current) =>
+        setStatus({ state: 'working', progress, current }),
       );
-      const name = exportFileName(fileName, settings.format);
-      const file = new File([result.bytes as Uint8Array<ArrayBuffer>], name, {
-        type: result.mimeType,
-      });
-      const url = URL.createObjectURL(file);
-      setStatus({ state: 'done', file, url, width: result.width, height: result.height });
-      download(url, name);
+      const url = URL.createObjectURL(output.file);
+      setStatus({ state: 'done', output, url });
+      download(url, output.file.name);
     } catch (error) {
       setStatus({
         state: 'error',
@@ -79,7 +89,7 @@ export function ExportDialog({ fileName, fullSize, onExport, onClose }: ExportDi
   const canShare =
     status.state === 'done' &&
     typeof navigator.canShare === 'function' &&
-    navigator.canShare({ files: [status.file] });
+    navigator.canShare({ files: status.output.files });
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -91,7 +101,7 @@ export function ExportDialog({ fileName, fullSize, onExport, onClose }: ExportDi
         onClick={(event) => event.stopPropagation()}
       >
         <header className="modal-header">
-          <h2 id="export-title">Export</h2>
+          <h2 id="export-title">{count === 1 ? 'Export' : `Export ${count} photos`}</h2>
           <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
             ✕
           </button>
@@ -175,11 +185,20 @@ export function ExportDialog({ fileName, fullSize, onExport, onClose }: ExportDi
             )}
           </div>
           <p className="panel-note" data-testid="export-size">
-            {size.width} × {size.height} px · {((size.width * size.height) / 1e6).toFixed(1)} MP ·
-            about {formatFileSize(estimateBytes(size, settings))}
-            {size.width === fullSize.width && settings.sizeMode !== 'full'
-              ? ' (photos are never enlarged)'
-              : ''}
+            {size && fullSize ? (
+              <>
+                {size.width} × {size.height} px · {((size.width * size.height) / 1e6).toFixed(1)} MP
+                · about {formatFileSize(estimateBytes(size, settings))}
+                {size.width === fullSize.width && settings.sizeMode !== 'full'
+                  ? ' (photos are never enlarged)'
+                  : ''}
+              </>
+            ) : (
+              <>
+                Each photo is sized separately; photos are never enlarged.
+                {count > 1 ? ' Several photos are saved together as one ZIP file.' : ''}
+              </>
+            )}
           </p>
         </fieldset>
 
@@ -212,6 +231,9 @@ export function ExportDialog({ fileName, fullSize, onExport, onClose }: ExportDi
             <div className="progress-bar" style={{ width: `${status.progress * 100}%` }} />
           </div>
         )}
+        {status.state === 'working' && status.current && (
+          <p className="panel-note">Exporting {status.current}…</p>
+        )}
         {status.state === 'error' && (
           <p className="panel-warning" role="alert">
             Export failed: {status.message}
@@ -219,9 +241,20 @@ export function ExportDialog({ fileName, fullSize, onExport, onClose }: ExportDi
         )}
         {status.state === 'done' && (
           <p className="export-done" role="status">
-            Saved <strong>{status.file.name}</strong> ({status.width} × {status.height},{' '}
-            {formatFileSize(status.file.size)}). If the download didn't start, use the buttons
-            below.
+            Saved <strong>{status.output.file.name}</strong> (
+            {status.output.width && status.output.height
+              ? `${status.output.width} × ${status.output.height}, `
+              : status.output.files.length > 1
+                ? `${status.output.files.length} photos, `
+                : ''}
+            {formatFileSize(status.output.file.size)}). If the download didn't start, use the
+            buttons below.
+            {status.output.failed.length > 0 && (
+              <span className="panel-warning">
+                {' '}
+                Could not export: {status.output.failed.join(', ')}.
+              </span>
+            )}
           </p>
         )}
 
@@ -232,7 +265,7 @@ export function ExportDialog({ fileName, fullSize, onExport, onClose }: ExportDi
                 <button
                   type="button"
                   className="button"
-                  onClick={() => navigator.share({ files: [status.file] }).catch(() => {})}
+                  onClick={() => navigator.share({ files: status.output.files }).catch(() => {})}
                   title="On iPad: Save Image, AirDrop, Mail…"
                 >
                   Share…
@@ -241,7 +274,7 @@ export function ExportDialog({ fileName, fullSize, onExport, onClose }: ExportDi
               <button
                 type="button"
                 className="button"
-                onClick={() => download(status.url, status.file.name)}
+                onClick={() => download(status.url, status.output.file.name)}
               >
                 Save file
               </button>

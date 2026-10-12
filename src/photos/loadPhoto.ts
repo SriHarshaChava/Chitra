@@ -22,7 +22,8 @@ import {
 
 export interface LoadCallbacks {
   onInfo(info: PhotoInfo): void;
-  onPreview(image: SourceImage): void;
+  /** Leave out to skip the camera preview (e.g. for batch export). */
+  onPreview?(image: SourceImage): void;
   onFull(image: SourceImage, decodeMs: number): void;
 }
 
@@ -96,11 +97,12 @@ export async function loadPhoto(
     // LibRaw's metadata is the primary source; EXIF fills gaps such as exposure compensation.
     callbacks.onInfo(mergeInfo(raw.info, exif));
 
-    if (raw.preview) {
+    const onPreview = callbacks.onPreview;
+    if (raw.preview && onPreview) {
       try {
         const bitmap = await createImageBitmap(raw.preview);
         const preview = await renderedSourceFromBitmap(bitmap, raw.previewRotation, true);
-        deliver(preview, callbacks.onPreview);
+        deliver(preview, onPreview);
       } catch {
         // A broken preview is not fatal; continue with the full decode.
       }
@@ -126,6 +128,18 @@ export async function loadPhoto(
   } finally {
     raw.dispose();
   }
+}
+
+/** Decodes a photo fully (no camera preview) and returns its pixels. */
+export async function decodeFull(file: File): Promise<SourceImage> {
+  let result: SourceImage | null = null;
+  await loadPhoto(
+    file,
+    { onInfo: () => {}, onFull: (image) => (result = image) },
+    new AbortController().signal,
+  );
+  if (!result) throw new Error(`Could not decode ${file.name}.`);
+  return result;
 }
 
 /**

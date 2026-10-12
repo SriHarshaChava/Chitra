@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { requestPersistentStorage } from '../platform/storage';
 import * as db from './db';
 import { importFile } from './importPhotos';
+import { BUILT_IN_PRESETS, type Preset } from './presets';
 import type { CatalogPhoto, PhotoChanges } from './types';
 
 export interface ImportProgress {
@@ -28,6 +29,7 @@ export function useCatalog() {
   const [importing, setImporting] = useState<ImportProgress | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [userPresets, setUserPresets] = useState<Preset[]>([]);
   const photosRef = useRef<CatalogPhoto[]>([]);
 
   const replacePhotos = useCallback((next: CatalogPhoto[]) => {
@@ -46,6 +48,11 @@ export function useCatalog() {
   // Load the catalog when the app starts.
   useEffect(() => {
     let cancelled = false;
+    db.getAllPresets()
+      .then((presets) => {
+        if (!cancelled) setUserPresets(presets.sort((a, b) => a.createdAt - b.createdAt));
+      })
+      .catch((e: unknown) => console.error(e));
     db.getAllPhotos()
       .then(async (all) => {
         if (cancelled) return;
@@ -123,6 +130,39 @@ export function useCatalog() {
     [replacePhotos],
   );
 
+  /** Applies different changes to different photos at once (paste, presets, restore). */
+  const updateEach = useCallback(
+    (updates: { id: string; changes: PhotoChanges }[]) => {
+      const byId = new Map(updates.map((u) => [u.id, u.changes]));
+      const changed: CatalogPhoto[] = [];
+      const next = photosRef.current.map((p) => {
+        const changes = byId.get(p.id);
+        if (!changes) return p;
+        const updated = { ...p, ...changes };
+        changed.push(updated);
+        return updated;
+      });
+      replacePhotos(next);
+      for (const photo of changed) {
+        db.putPhoto(photo).catch((e: unknown) => {
+          console.error(e);
+          setError('A change could not be saved. Is the device out of storage space?');
+        });
+      }
+    },
+    [replacePhotos],
+  );
+
+  const savePreset = useCallback(async (preset: Preset) => {
+    await db.putPreset(preset);
+    setUserPresets((list) => [...list.filter((p) => p.id !== preset.id), preset]);
+  }, []);
+
+  const deletePreset = useCallback(async (id: string) => {
+    await db.deletePreset(id);
+    setUserPresets((list) => list.filter((p) => p.id !== id));
+  }, []);
+
   const remove = useCallback(
     async (ids: string[]) => {
       await db.deletePhotos(ids);
@@ -165,6 +205,11 @@ export function useCatalog() {
     error,
     importFiles,
     update,
+    updateEach,
+    presets: [...BUILT_IN_PRESETS, ...userPresets],
+    userPresets,
+    savePreset,
+    deletePreset,
     remove,
     getFile,
     setThumbnail,

@@ -5,14 +5,17 @@
  *   photos     – one CatalogPhoto record per photo (metadata, ratings, edit recipe)
  *   originals  – the original file, copied at import (key: photo id)
  *   thumbnails – a small JPEG showing the photo with its edits (key: photo id)
+ *   presets    – presets saved by the user
  *
  * Originals are copied because Safari on iPad cannot re-open a file later; a copy is
  * the only way the photo is still there tomorrow. See docs/decisions/0004-catalog.md.
  */
+import type { Preset } from './presets';
 import type { CatalogPhoto } from './types';
 
 const DB_NAME = 'chitra';
-const DB_VERSION = 1;
+/** Version 2 added the presets store. */
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -20,11 +23,15 @@ export function openCatalog(factory: IDBFactory = indexedDB): Promise<IDBDatabas
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
       const request = factory.open(DB_NAME, DB_VERSION);
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = (event) => {
         const db = request.result;
-        db.createObjectStore('photos', { keyPath: 'id' });
-        db.createObjectStore('originals');
-        db.createObjectStore('thumbnails');
+        // Create only what an older catalog is missing, so existing photos are kept.
+        if (event.oldVersion < 1) {
+          db.createObjectStore('photos', { keyPath: 'id' });
+          db.createObjectStore('originals');
+          db.createObjectStore('thumbnails');
+        }
+        if (event.oldVersion < 2) db.createObjectStore('presets', { keyPath: 'id' });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -49,7 +56,7 @@ export async function deleteCatalog(factory: IDBFactory = indexedDB): Promise<vo
   });
 }
 
-type StoreName = 'photos' | 'originals' | 'thumbnails';
+type StoreName = 'photos' | 'originals' | 'thumbnails' | 'presets';
 
 function done(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -117,5 +124,22 @@ export async function deletePhotos(ids: string[]): Promise<void> {
     tx.objectStore('originals').delete(id);
     tx.objectStore('thumbnails').delete(id);
   }
+  return done(tx);
+}
+
+export async function getAllPresets(): Promise<Preset[]> {
+  const { store: s } = await store('presets', 'readonly');
+  return result(s.getAll() as IDBRequest<Preset[]>);
+}
+
+export async function putPreset(preset: Preset): Promise<void> {
+  const { tx, store: s } = await store('presets', 'readwrite');
+  s.put(preset);
+  return done(tx);
+}
+
+export async function deletePreset(id: string): Promise<void> {
+  const { tx, store: s } = await store('presets', 'readwrite');
+  s.delete(id);
   return done(tx);
 }
