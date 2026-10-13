@@ -71,6 +71,14 @@ type UniformName =
   | 'u_tex'
   | 'u_sourceToRec2020'
   | 'u_develop'
+  | 'u_detailOn'
+  | 'u_texelSize'
+  | 'u_nrLuma'
+  | 'u_nrRange'
+  | 'u_nrColor'
+  | 'u_sharpen'
+  | 'u_sharpenWeights'
+  | 'u_masking'
   | 'u_input'
   | 'u_saturation'
   | 'u_vibrance'
@@ -109,6 +117,8 @@ export class DevelopRenderer {
   /** Tone curve lookup table on the GPU, and which table it holds. */
   private readonly curveTexture: WebGLTexture;
   private curveData: Float32Array | null = null;
+  /** Whether the settings in use have sharpening or noise reduction. */
+  private detailActive = false;
 
   constructor(canvas: HTMLCanvasElement, displaySpace: DisplayColorSpace) {
     const gl = canvas.getContext('webgl2', {
@@ -131,6 +141,14 @@ export class DevelopRenderer {
       'u_tex',
       'u_sourceToRec2020',
       'u_develop',
+      'u_detailOn',
+      'u_texelSize',
+      'u_nrLuma',
+      'u_nrRange',
+      'u_nrColor',
+      'u_sharpen',
+      'u_sharpenWeights',
+      'u_masking',
       'u_input',
       'u_saturation',
       'u_vibrance',
@@ -262,12 +280,12 @@ export class DevelopRenderer {
 
     const overviewScale = image.overview.width / image.width;
     if (view.scale <= overviewScale) {
-      this.drawRect(image.overview.texture, fullRect(image), fullRect(image), gl.LINEAR);
+      this.drawRect(image.overview.texture, fullRect(image), fullRect(image), gl.LINEAR, false);
     } else {
       const magFilter = view.scale >= PIXELATED_FROM_SCALE ? gl.NEAREST : gl.LINEAR;
       for (const tile of image.tiles) {
         if (!isVisible(tile.core, toClip)) continue;
-        this.drawRect(tile.texture, tile.core, tile.padded, magFilter);
+        this.drawRect(tile.texture, tile.core, tile.padded, magFilter, true);
       }
     }
     gl.disable(gl.SCISSOR_TEST);
@@ -305,7 +323,7 @@ export class DevelopRenderer {
     // Map the cropped photo onto the whole small framebuffer (row 0 = top of the photo).
     const cropToClip: Matrix3 = [2 / cropSize.width, 0, -1, 0, 2 / cropSize.height, -1, 0, 0, 1];
     this.useProgram(image, multiply(cropToClip, imageToCrop), settings, outputMatrix);
-    this.drawRect(image.overview.texture, fullRect(image), fullRect(image), gl.LINEAR);
+    this.drawRect(image.overview.texture, fullRect(image), fullRect(image), gl.LINEAR, false);
 
     const pixels = new Uint8Array(w * h * 4);
     gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
@@ -386,7 +404,7 @@ export class DevelopRenderer {
     this.useProgram(image, toClip, settings, outputMatrix, false);
     for (const tile of image.tiles) {
       if (!isVisible(tile.core, toClip)) continue;
-      this.drawRect(tile.texture, tile.core, tile.padded, gl.LINEAR);
+      this.drawRect(tile.texture, tile.core, tile.padded, gl.LINEAR, true);
     }
     const pixels = new Float32Array(region.width * region.height * 4);
     gl.readPixels(0, 0, region.width, region.height, gl.RGBA, gl.FLOAT, pixels);
@@ -428,6 +446,16 @@ export class DevelopRenderer {
       gl.uniform1f(u.u_contrast, settings.contrast);
       gl.uniform1f(u.u_baseContrast, settings.baseContrast);
       this.setColourUniforms(settings);
+    }
+    this.detailActive = Boolean(settings?.detail);
+    if (settings?.detail) {
+      const d = settings.detail;
+      gl.uniform1f(u.u_nrLuma, d.luminance);
+      gl.uniform1f(u.u_nrRange, d.luminanceRange);
+      gl.uniform1f(u.u_nrColor, d.color);
+      gl.uniform1f(u.u_sharpen, d.sharpen);
+      gl.uniform1fv(u.u_sharpenWeights, d.sharpenWeights);
+      gl.uniform1f(u.u_masking, d.masking);
     }
     // Photo tiles are drawn with texture unit 0.
     gl.activeTexture(gl.TEXTURE0);
@@ -479,9 +507,23 @@ export class DevelopRenderer {
     }
   }
 
-  /** Draws `area` (image pixels) using a texture that covers `textureArea`. */
-  private drawRect(texture: WebGLTexture, area: Rect, textureArea: Rect, magFilter: number) {
+  /**
+   * Draws `area` (image pixels) using a texture that covers `textureArea`.
+   * @param fullResolution the texture has one texel per image pixel (a tile), so
+   *   sharpening and noise reduction can run; the small overview skips them.
+   */
+  private drawRect(
+    texture: WebGLTexture,
+    area: Rect,
+    textureArea: Rect,
+    magFilter: number,
+    fullResolution: boolean,
+  ) {
     const gl = this.gl;
+    const detail = fullResolution && this.detailActive;
+    gl.uniform1i(this.uniforms.u_detailOn, detail ? 1 : 0);
+    if (detail)
+      gl.uniform2f(this.uniforms.u_texelSize, 1 / textureArea.width, 1 / textureArea.height);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, magFilter);
     gl.uniform4f(this.uniforms.u_rect, area.x, area.y, area.width, area.height);

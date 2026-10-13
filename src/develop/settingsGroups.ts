@@ -4,6 +4,7 @@
  * also pasting its crop.
  */
 import {
+  DETAIL_SECTIONS,
   GRADING_SLIDERS,
   GRADING_WHEELS,
   MIXER_SLIDERS,
@@ -12,7 +13,14 @@ import {
 } from './recipe';
 
 export type SettingsGroup =
-  'whiteBalance' | 'tone' | 'presence' | 'toneCurve' | 'colorMixer' | 'colorGrading' | 'geometry';
+  | 'whiteBalance'
+  | 'tone'
+  | 'presence'
+  | 'toneCurve'
+  | 'colorMixer'
+  | 'colorGrading'
+  | 'detail'
+  | 'geometry';
 
 /** Recipe fields that aren't single numbers. */
 type ShapeField = 'toneCurve' | 'geometry';
@@ -39,6 +47,11 @@ export const SETTINGS_GROUPS: {
       ...GRADING_WHEELS.flatMap((w) => [w.hue.key, w.amount.key]),
       ...GRADING_SLIDERS.map((s) => s.key),
     ],
+  },
+  {
+    id: 'detail',
+    label: 'Sharpening & noise reduction',
+    keys: DETAIL_SECTIONS.flatMap((s) => s.sliders.map((spec) => spec.key)),
   },
   { id: 'geometry', label: 'Crop, straighten & rotate', keys: [], field: 'geometry' },
 ];

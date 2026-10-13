@@ -69,6 +69,12 @@ export const BUILT_IN_PRESETS: Preset[] = [
     gradeBalance: 0,
     gradeBlending: 50,
   }),
+  builtIn('sharpen-clean', 'Sharpen & clean (RAW)', {
+    sharpenAmount: 40,
+    sharpenRadius: 1,
+    sharpenMasking: 20,
+    noiseColor: 25,
+  }),
   builtIn('matte', 'Matte', { contrast: -10 }, [
     { x: 0, y: 0.07 },
     { x: 0.25, y: 0.24 },

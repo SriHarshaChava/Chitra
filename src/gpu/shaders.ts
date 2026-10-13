@@ -4,7 +4,13 @@
  * change one, change the other (a browser test compares them).
  */
 
+import { COLOR_NR_RANGE, LUMA_FLOOR, NR_WEIGHTS, SHARPEN_OVERSHOOT } from '../develop/detail';
 import { BAND_CENTERS, NEUTRAL_CHROMA } from '../develop/hsl';
+
+const glslFloat = (v: number) => {
+  const text = String(v);
+  return /[.e]/.test(text) ? text : `${text}.0`;
+};
 
 export const VERTEX_SHADER = /* glsl */ `#version 300 es
 in vec2 a_unit;          // corner of a unit square (0..1)
@@ -29,6 +35,14 @@ in vec2 v_uv;
 uniform sampler2D u_tex;
 uniform mat3 u_sourceToRec2020; // texture colours -> linear Rec.2020
 uniform bool u_develop;         // false: show the image as it is (camera previews)
+uniform bool u_detailOn;        // sharpening / noise reduction (only at full resolution)
+uniform vec2 u_texelSize;       // 1 / texture size, to step to neighbouring pixels
+uniform float u_nrLuma;
+uniform float u_nrRange;
+uniform float u_nrColor;
+uniform float u_sharpen;
+uniform float u_sharpenWeights[25];
+uniform float u_masking;
 uniform mat3 u_input;           // white balance x exposure
 uniform float u_saturation;
 uniform float u_vibrance;
@@ -127,6 +141,91 @@ vec3 fromOklab(vec3 lab) {
   return u_fromLms * (lms * lms * lms);
 }
 
+// ---- Detail (see src/develop/detail.ts) ----
+
+const float NR_WEIGHTS[25] = float[25](${NR_WEIGHTS.map(glslFloat).join(', ')});
+
+vec3 neighbour(int dx, int dy) {
+  return u_sourceToRec2020 * texture(u_tex, v_uv + vec2(float(dx), float(dy)) * u_texelSize).rgb;
+}
+
+float lumaOf(vec3 c) {
+  return dot(c, vec3(0.2627, 0.678, 0.0593));
+}
+
+float perceptual(float l) {
+  return encodeExtended(max(0.0, l));
+}
+
+vec3 detail(vec3 c0) {
+  float l0 = lumaOf(c0);
+  float p0 = perceptual(l0);
+  float pOut = p0;
+
+  if (u_nrLuma > 0.0 || u_sharpen > 0.0) {
+    float near[25];
+    for (int j = -2; j <= 2; j++) {
+      for (int i = -2; i <= 2; i++) near[(j + 2) * 5 + (i + 2)] = perceptual(lumaOf(neighbour(i, j)));
+    }
+
+    if (u_nrLuma > 0.0) {
+      float sum = 0.0;
+      float weights = 0.0;
+      for (int k = 0; k < 25; k++) {
+        float d = near[k] - p0;
+        float w = NR_WEIGHTS[k] * exp(-(d * d) / (2.0 * u_nrRange * u_nrRange));
+        sum += w * near[k];
+        weights += w;
+      }
+      pOut = p0 + (sum / weights - p0) * min(1.0, 2.0 * u_nrLuma);
+    }
+
+    if (u_sharpen > 0.0) {
+      float blurred = 0.0;
+      for (int k = 0; k < 25; k++) blurred += u_sharpenWeights[k] * near[k];
+      float mask = 1.0;
+      if (u_masking > 0.0) {
+        // near[(j + 2) * 5 + (i + 2)]
+        float gx = near[8] + 2.0 * near[13] + near[18] - (near[6] + 2.0 * near[11] + near[16]);
+        float gy = near[16] + 2.0 * near[17] + near[18] - (near[6] + 2.0 * near[7] + near[8]);
+        mask = smoothstep(0.5 * u_masking, u_masking, length(vec2(gx, gy)) / 4.0);
+      }
+      float lo = near[6];
+      float hi = near[6];
+      for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+          lo = min(lo, near[(j + 2) * 5 + (i + 2)]);
+          hi = max(hi, near[(j + 2) * 5 + (i + 2)]);
+        }
+      }
+      float sharpened = pOut + u_sharpen * (p0 - blurred) * mask;
+      pOut = clamp(sharpened, lo - ${glslFloat(SHARPEN_OVERSHOOT)}, hi + ${glslFloat(SHARPEN_OVERSHOOT)});
+    }
+  }
+
+  float lOut = decodeExtended(max(0.0, pOut));
+  float k = lOut / max(l0, ${glslFloat(LUMA_FLOOR)});
+  vec3 result = c0 * k + (lOut - l0 * k);
+
+  if (u_nrColor > 0.0) {
+    vec3 sum = vec3(0.0);
+    float weights = 0.0;
+    for (int j = -2; j <= 2; j++) {
+      for (int i = -2; i <= 2; i++) {
+        vec3 c = neighbour(2 * i, 2 * j);
+        float l = lumaOf(c);
+        float d = perceptual(l) - p0;
+        float w = NR_WEIGHTS[(j + 2) * 5 + (i + 2)] *
+                  exp(-(d * d) / (2.0 * ${glslFloat(COLOR_NR_RANGE)} * ${glslFloat(COLOR_NR_RANGE)}));
+        sum += w * c / max(l, ${glslFloat(LUMA_FLOOR)});
+        weights += w;
+      }
+    }
+    result += u_nrColor * (sum / weights - c0 / max(l0, ${glslFloat(LUMA_FLOOR)})) * lOut;
+  }
+  return max(vec3(0.0), result);
+}
+
 const float PI = 3.14159265358979;
 const float BAND_CENTERS[8] = float[8](${BAND_CENTERS.map((c) => c.toFixed(1)).join(', ')});
 
@@ -170,6 +269,7 @@ void main() {
   vec3 c = u_sourceToRec2020 * texture(u_tex, v_uv).rgb;
 
   if (u_develop) {
+    if (u_detailOn) c = detail(c);
     c = u_input * c;
 
     float luma = dot(c, vec3(0.2627, 0.678, 0.0593));

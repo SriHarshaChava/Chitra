@@ -12,8 +12,9 @@ import { isLinearCurve, LINEAR_CURVE, sanitizeCurve, type ToneCurve } from './to
 /**
  * Version 2 added `geometry` (crop, straighten, rotate, flip).
  * Version 3 added the tone curve, colour mixer and colour grading.
+ * Version 4 added detail (sharpening and noise reduction).
  */
-export const RECIPE_VERSION = 3;
+export const RECIPE_VERSION = 4;
 
 /** Colour mixer sliders, for example `hueBlue` or `luminanceOrange`. */
 export type MixerKey = `${'hue' | 'saturation' | 'luminance'}${Band}`;
@@ -29,7 +30,12 @@ export type GradingKey =
   | 'gradeBalance'
   | 'gradeBlending';
 
-export interface Recipe extends Record<MixerKey, number>, Record<GradingKey, number> {
+/** Detail sliders: sharpening and noise reduction. */
+export type DetailKey =
+  'sharpenAmount' | 'sharpenRadius' | 'sharpenMasking' | 'noiseLuminance' | 'noiseColor';
+
+export interface Recipe
+  extends Record<MixerKey, number>, Record<GradingKey, number>, Record<DetailKey, number> {
   version: typeof RECIPE_VERSION;
   /** −100 (cooler/bluer) … +100 (warmer/yellower), relative to the camera's white balance. */
   temperature: number;
@@ -77,6 +83,11 @@ export const DEFAULT_RECIPE: Recipe = Object.freeze({
   gradeHighlightsSaturation: 0,
   gradeBalance: 0,
   gradeBlending: 50,
+  sharpenAmount: 0,
+  sharpenRadius: 1,
+  sharpenMasking: 0,
+  noiseLuminance: 0,
+  noiseColor: 0,
   toneCurve: LINEAR_CURVE,
   geometry: DEFAULT_GEOMETRY,
 });
@@ -182,6 +193,38 @@ export const GRADING_WHEELS: { id: string; label: string; hue: SliderSpec; amoun
     },
   ];
 
+const plainSlider = (key: DetailKey, label: string, max = 100): SliderSpec => ({
+  key,
+  label,
+  min: 0,
+  max,
+  step: 1,
+  format: String,
+});
+
+/** Sharpening and noise reduction. */
+export const DETAIL_SECTIONS: SliderSection[] = [
+  {
+    title: 'Sharpening',
+    sliders: [
+      plainSlider('sharpenAmount', 'Amount', 150),
+      {
+        key: 'sharpenRadius',
+        label: 'Radius',
+        min: 0.5,
+        max: 2,
+        step: 0.1,
+        format: (v) => v.toFixed(1),
+      },
+      plainSlider('sharpenMasking', 'Masking'),
+    ],
+  },
+  {
+    title: 'Noise reduction',
+    sliders: [plainSlider('noiseLuminance', 'Luminance'), plainSlider('noiseColor', 'Colour')],
+  },
+];
+
 export const GRADING_SLIDERS: SliderSpec[] = [
   percentSlider('gradeBalance', 'Balance'),
   { key: 'gradeBlending', label: 'Blending', min: 0, max: 100, step: 1, format: String },
@@ -193,6 +236,7 @@ export const ALL_SLIDERS: SliderSpec[] = [
   ...MIXER_SLIDERS,
   ...GRADING_WHEELS.flatMap((w) => [w.hue, w.amount]),
   ...GRADING_SLIDERS,
+  ...DETAIL_SECTIONS.flatMap((s) => s.sliders),
 ];
 
 export function isDefaultRecipe(recipe: Recipe): boolean {
@@ -211,7 +255,8 @@ export function sameRecipe(a: Recipe, b: Recipe): boolean {
  * Turns untrusted data (e.g. from storage or an imported file) into a valid recipe:
  * unknown fields are dropped, missing or invalid values become defaults, and values
  * are clamped to each slider's range. Older recipes still load: settings they don't
- * have (geometry in version 1; curve, mixer and grading in version 2) start at defaults.
+ * have (geometry in version 1; curve, mixer and grading in version 2; detail in
+ * version 3) start at defaults.
  */
 export function sanitizeRecipe(data: unknown): Recipe {
   const source = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
